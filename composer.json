@@ -1,0 +1,30 @@
+{
+  "name": "solophp/base-repository",
+  "type": "library",
+  "description": "Solo BaseRepository provides a foundational abstract class for implementing the Repository pattern in PHP applications.",
+  "keywords": [
+    "repository",
+    "database",
+    "query-builder",
+    "php"
+  ],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Vitaliy Olos",
+      "email": "vedastudio@gmail.com"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Solo\\": "Solo/"
+    }
+  },
+  "require": {
+    "php": ">=8.2",
+    "solophp/database": "^2.6",
+    "solophp/query-builder": "^1.0"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
