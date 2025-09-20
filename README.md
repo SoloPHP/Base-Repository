@@ -15,7 +15,7 @@ composer require solophp/base-repository
 ```
 
 ### Requirements
-- PHP 8.2+
+- PHP 8.3+
 - Doctrine DBAL (`doctrine/dbal` ^4.3)
 
 ### Constructor
@@ -257,14 +257,14 @@ final class UserRepository extends BaseRepository
     /** @return list<User> */
     public function withProfiles(array $userIds): array
     {
+        $u = $this->tableAlias ?: substr($this->table, 0, 1);
         $qb = $this->table()
-            ->select('users.*', 'profiles.score as profile_score')
-            ->join('users', 'profiles', 'profiles', 'profiles.user_id = users.id')
-            ->andWhere($qb->expr()->in('users.id', ':userIds'))
+            ->select("{$u}.*", 'p.score AS profile_score')
+            ->leftJoin($u, 'profiles', 'p', "p.user_id = {$u}.id")
+            ->andWhere("{$u}.id IN (:userIds)")
             ->setParameter('userIds', $userIds, \Doctrine\DBAL\ArrayParameterType::STRING);
-        
-        $rows = $qb->executeQuery()->fetchAllAssociative();
 
+        $rows = $qb->executeQuery()->fetchAllAssociative();
         return array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
     }
 
@@ -330,6 +330,57 @@ protected function applyOrderBy(QueryBuilder $qb, array $orderBy): void
 
 4) Harden identifier safety or add field whitelists by overriding `assertSafeIdentifier` or validating inputs before calling aggregates/order-by.
 
+
+## Eager Loading (optional) with `WithRelations` trait
+
+This repository includes an optional trait to eagerly load simple relations without changing the base API.
+
+- Location: `Solo\\BaseRepository\\WithRelations`
+- Supports: `belongsTo`, `hasMany`
+- API: `$repo->with(['relationName'])->getBy(...)`, `getById(...)`, `getFirstBy(...)`, `getAll()`, `insertAndGet(...)`, `updateAndGet(...)`
+- After each call the internal eager-load list is reset
+
+### Setup in your repository
+Implement `getRelationConfig()` and expose referenced repositories as properties.
+
+```php
+use Solo\\BaseRepository\\WithRelations;
+
+final class ProductRepository extends BaseSoftDeletableRepository
+{
+    use WithRelations;
+
+    public function __construct(Connection $connection, CategoryRepository $categories, ProductImageRepository $images)
+    {
+        parent::__construct($connection, Product::class, 'products');
+        $this->categories = $categories;   // used by relation config
+        $this->images = $images;           // used by relation config
+    }
+
+    protected function getRelationConfig(): array
+    {
+        return [
+            // [type, repositoryProperty, foreignKeyOnModel, setterMethod, ?sort]
+            'category' => ['belongsTo', 'categories', 'category_id', 'setCategory'],
+            'images'   => ['hasMany',   'images',     'product_id',  'setImages', ['id' => 'ASC']],
+        ];
+    }
+}
+```
+
+### Usage
+```php
+// Single
+$product = $repo->with(['category', 'images'])->getById(10);
+
+// List
+$products = $repo->with(['category', 'images'])->getBy(['status' => 'active'], ['id' => 'DESC'], 20, 1);
+```
+
+Notes:
+- `belongsTo` assumes the related PK is `id`.
+- `hasMany` includes a guard to avoid empty `IN ()` and assigns an empty array when there are no children.
+- Works with `BaseSoftDeletableRepository` repositories for related data as well (soft-delete defaults still apply there).
 
 ### License
 

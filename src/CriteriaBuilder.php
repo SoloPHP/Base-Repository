@@ -41,7 +41,7 @@ class CriteriaBuilder
             }
 
             $this->assertSafeIdentifier($field);
-            $quotedField = $field;
+            $quotedField = "{$this->tableAlias}.{$field}";
 
             if ($value === null) {
                 $qb->andWhere("{$quotedField} IS NULL");
@@ -50,7 +50,11 @@ class CriteriaBuilder
 
             if (is_array($value) && array_is_list($value)) {
                 $qb->andWhere($qb->expr()->in($quotedField, ':' . $field));
-                $qb->setParameter($field, $value, ArrayParameterType::STRING);
+                $paramType = ArrayParameterType::STRING;
+                if (!empty($value) && is_int($value[0])) {
+                    $paramType = ArrayParameterType::INTEGER;
+                }
+                $qb->setParameter($field, $value, $paramType);
                 continue;
             }
 
@@ -76,7 +80,7 @@ class CriteriaBuilder
     {
         foreach ($orderBy as $field => $direction) {
             $this->assertSafeIdentifier($field);
-            $quotedField = $field;
+            $quotedField = "{$this->tableAlias}.{$field}";
             $dir = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
             $qb->orderBy($quotedField, $dir);
         }
@@ -94,7 +98,7 @@ class CriteriaBuilder
         foreach ($search as $searchField => $searchValue) {
             if ($searchValue !== null && $searchValue !== '') {
                 $this->assertSafeIdentifier($searchField);
-                $quotedField = $searchField;
+                $quotedField = "{$this->tableAlias}.{$searchField}";
                 $paramName = 'search_' . $searchField;
                 $qb->andWhere("{$quotedField} LIKE :{$paramName}");
                 $valueAsString = is_scalar($searchValue) ? (string) $searchValue : '';

@@ -42,7 +42,7 @@ abstract class BaseRepository implements RepositoryInterface
         return $this->connection->createQueryBuilder();
     }
 
-    private function table(): QueryBuilder
+    protected function table(): QueryBuilder
     {
         $alias = $this->getTableAlias();
         return $this->connection->createQueryBuilder()
