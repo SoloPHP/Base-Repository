@@ -309,7 +309,7 @@ abstract class BaseRepository implements RepositoryInterface
                ->setParameter($column, $value);
         }
 
-        $qb = $this->applyCriteria($qb, $criteria);
+        $qb = $this->applyCriteria($qb, $criteria, false);
 
         return (int) $qb->executeStatement();
     }
@@ -419,9 +419,9 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * @param array<string, mixed> $criteria
      */
-    protected function applyCriteria(QueryBuilder $qb, array $criteria): QueryBuilder
+    protected function applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true): QueryBuilder
     {
-        return $this->criteriaBuilder->applyCriteria($qb, $criteria);
+        return $this->criteriaBuilder->applyCriteria($qb, $criteria, $useAlias);
     }
 
     /**
@@ -471,7 +471,7 @@ abstract class BaseRepository implements RepositoryInterface
         $qb = $this->connection->createQueryBuilder()
             ->delete($this->table);
 
-        $qb = $this->applyCriteria($qb, $criteria);
+        $qb = $this->applyCriteria($qb, $criteria, false);
 
         return (int) $qb->executeStatement();
     }

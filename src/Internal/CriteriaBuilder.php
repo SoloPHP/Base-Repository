@@ -26,7 +26,7 @@ class CriteriaBuilder
      * @param array<string, mixed> $criteria
      * @return QueryBuilder
      */
-    public function applyCriteria(QueryBuilder $qb, array $criteria): QueryBuilder
+    public function applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true): QueryBuilder
     {
         foreach ($criteria as $field => $value) {
             if ($field === 'search' && is_array($value)) {
@@ -36,12 +36,12 @@ class CriteriaBuilder
 
             if ($field === 'deleted') {
                 $mode = (is_string($value) && in_array($value, ['only','with','without'], true)) ? $value : null;
-                $this->applyDeletedCondition($qb, $mode);
+                $this->applyDeletedCondition($qb, $mode, $useAlias);
                 continue;
             }
 
             $this->assertSafeIdentifier($field);
-            $quotedField = "{$this->tableAlias}.{$field}";
+            $quotedField = $useAlias ? "{$this->tableAlias}.{$field}" : $field;
 
             if ($value === null) {
                 $qb->andWhere("{$quotedField} IS NULL");
@@ -110,9 +110,9 @@ class CriteriaBuilder
     /**
      * @param 'only'|'with'|'without'|null $deletedMode
      */
-    private function applyDeletedCondition(QueryBuilder $qb, ?string $deletedMode): void
+    private function applyDeletedCondition(QueryBuilder $qb, ?string $deletedMode, bool $useAlias): void
     {
-        $fullColumn = "{$this->tableAlias}.{$this->deletedAtColumn}";
+        $fullColumn = $useAlias ? "{$this->tableAlias}.{$this->deletedAtColumn}" : $this->deletedAtColumn;
 
         if ($deletedMode === 'only') {
             $qb->andWhere("{$fullColumn} IS NOT NULL");
