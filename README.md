@@ -211,6 +211,12 @@ $posts = $repo->with(['user'])->findAll();
 // Load multiple relations
 $posts = $repo->with(['user', 'comments'])->findBy(['status' => 'published']);
 
+// Nested relations via dot-notation
+// Example domain: products -> productAttributes (hasMany) -> attribute (belongsTo)
+$products = $productRepo
+    ->with(['productAttributes', 'productAttributes.attribute'])
+    ->findAll();
+
 // Works with all find methods
 $post = $repo->with(['user', 'comments'])->find(1);
 $post = $repo->with(['user'])->findOneBy(['slug' => 'my-post']);

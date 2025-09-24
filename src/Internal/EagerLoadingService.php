@@ -55,8 +55,13 @@ class EagerLoadingService
     /**
      * Load a specific relation
      */
-    public function loadRelation(array $items, string $relation, array $relationConfig, object $repository): void
-    {
+    public function loadRelation(
+        array $items,
+        string $relation,
+        array $relationConfig,
+        object $repository,
+        array $nested = []
+    ): void {
         $config = $relationConfig[$relation] ?? null;
         if (!$config) {
             return;
@@ -69,6 +74,12 @@ class EagerLoadingService
         $sort = $config[4] ?? [];
 
         $relatedRepository = $repository->{$repositoryProperty};
+
+        // If nested relations are requested, configure them on the related repository
+        if (!empty($nested) && method_exists($relatedRepository, 'with')) {
+            // Nested parts (e.g. ["attribute", "attribute.translations"]) are relative to the related repository
+            $relatedRepository->with($nested);
+        }
 
         if ($type === 'belongsTo') {
             $ids = $this->pluckUnique($items, $foreignKey);
@@ -87,6 +98,39 @@ class EagerLoadingService
             $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
             $this->joinHasMany($items, $related, $foreignKey, $setter);
         }
+    }
+
+    /**
+     * Group relations by their top-level part and collect nested segments for each.
+     *
+     * Example:
+     *   ["comments", "comments.user", "author.profile.avatar"]
+     * becomes
+     *   [
+     *     'comments' => ['user'],
+     *     'author' => ['profile.avatar']
+     *   ]
+     */
+    public function groupByTopLevel(array $relations): array
+    {
+        $grouped = [];
+        foreach ($relations as $path) {
+            if (!is_string($path) || $path === '') {
+                continue;
+            }
+            $parts = explode('.', $path);
+            $top = array_shift($parts);
+            if ($top === '') {
+                continue;
+            }
+            if (!array_key_exists($top, $grouped)) {
+                $grouped[$top] = [];
+            }
+            if (!empty($parts)) {
+                $grouped[$top][] = implode('.', $parts);
+            }
+        }
+        return $grouped;
     }
 
     /**

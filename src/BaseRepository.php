@@ -509,8 +509,11 @@ abstract class BaseRepository implements RepositoryInterface
             return $items;
         }
 
-        foreach ($relations as $relation) {
-            $this->eagerLoadingService->loadRelation($items, $relation, $this->relationConfig, $this);
+        // Support nested relations via dot-notation using top-level grouping
+        $grouped = $this->eagerLoadingService->groupByTopLevel($relations);
+
+        foreach ($grouped as $relation => $nested) {
+            $this->eagerLoadingService->loadRelation($items, $relation, $this->relationConfig, $this, $nested);
         }
 
         return $items;
