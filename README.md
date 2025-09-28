@@ -67,6 +67,7 @@ class PostRepository extends BaseRepository
 Features are automatically enabled based on configuration:
 - **Soft Delete**: Define `protected string $deletedAtColumn` to enable
 - **Eager Loading**: Define `protected array $relationConfig` to enable
+- **Custom IDs**: Set `protected bool $useAutoIncrement = false` to use custom IDs instead of auto-increment
 
 ### Constructor
 ```php
@@ -91,6 +92,7 @@ __construct(
 | `$connection` | Connection | - | Doctrine DBAL connection (constructor parameter) |
 | `$deletedAtColumn` | ?string | `null` | Soft-delete timestamp column (enables soft delete) |
 | `$relationConfig` | array | `[]` | Relations configuration (enables eager loading) |
+| `$useAutoIncrement` | bool | `true` | Whether to use auto-increment IDs or custom IDs |
 
 ### Criteria Syntax
 
@@ -169,6 +171,47 @@ $repo->restore(1);                           // Sets deleted_at = NULL
 $deleted = $repo->findBy(['deleted' => 'only']);     // Only soft-deleted
 $all = $repo->findBy(['deleted' => 'with']);         // All including soft-deleted
 $active = $repo->findBy(['deleted' => 'without']);   // Only active (default)
+```
+
+## Custom ID Support
+
+By default, the repository uses auto-increment IDs via `lastInsertId()`. For tables with custom IDs (UUIDs, prefixed IDs, etc.), disable auto-increment:
+
+```php
+class ProductRepository extends BaseRepository
+{
+    protected bool $useAutoIncrement = false; // Disable auto-increment
+
+    public function __construct(Connection $connection)
+    {
+        parent::__construct($connection, Product::class, 'products');
+    }
+}
+```
+
+### Usage with Custom IDs
+
+```php
+// Custom ID must be provided when auto-increment is disabled
+$product = $repo->create([
+    'id' => 'PROD-123',
+    'name' => 'Custom Product',
+    'price' => 99.99
+]);
+
+// Works with UUIDs too
+$user = $userRepo->create([
+    'id' => 'uuid-4e8c-9f7a-2b1d-3e5a6b7c8d9e',
+    'email' => 'user@example.com'
+]);
+```
+
+### Validation
+When `$useAutoIncrement = false`, the primary key must be provided in the data array, otherwise an `InvalidArgumentException` is thrown:
+
+```php
+// This will throw an exception if $useAutoIncrement = false
+$repo->create(['name' => 'Product']); // Missing 'id'
 ```
 
 ## Eager Loading

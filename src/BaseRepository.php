@@ -30,6 +30,7 @@ abstract class BaseRepository implements RepositoryInterface
     // Configuration properties - override in child classes
     protected ?string $deletedAtColumn = null;
     protected array $relationConfig = [];
+    protected bool $useAutoIncrement = true;
 
     /**
      * @param Connection $connection
@@ -231,6 +232,13 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function create(array $data): object
     {
+        // Validate custom ID requirement
+        if (!$this->useAutoIncrement && !isset($data[$this->primaryKey])) {
+            throw new \InvalidArgumentException(
+                "Primary key '{$this->primaryKey}' must be provided when auto-increment is disabled"
+            );
+        }
+
         $qb = $this->queryFactory->insertBuilder();
 
         foreach ($data as $column => $value) {
@@ -239,7 +247,13 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         $qb->executeStatement();
-        $id = $this->connection->lastInsertId();
+
+        // Determine ID based on auto-increment configuration
+        if ($this->useAutoIncrement) {
+            $id = $this->connection->lastInsertId();
+        } else {
+            $id = $data[$this->primaryKey];
+        }
 
         $model = $this->find($id);
 
