@@ -10,7 +10,7 @@ use Doctrine\DBAL\Query\QueryBuilder;
 /**
  * @internal
  */
-class QueryFactory
+final readonly class QueryFactory
 {
     public function __construct(
         private Connection $connection,

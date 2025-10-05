@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Internal;
 
-class EagerLoadingService
+final class EagerLoadingService
 {
     private array $eagerLoad = [];
 

@@ -5,8 +5,17 @@
 [![License](https://img.shields.io/packagist/l/solophp/base-repository.svg?style=flat-square)](LICENSE)
 
 Lightweight base repository with built-in soft delete and eager loading capabilities.
-- **`RepositoryInterface<TModel>`**: generic contract for CRUD, aggregates, pagination, and transactions.
-- **`BaseRepository<TModel>`**: ready-to-extend base with criteria parsing, sorting, mapping, soft delete, and eager loading.
+
+## Features
+
+- Soft delete with configurable `deleted_at` column
+- Eager loading via `relationConfig` (supports `hasMany` and `belongsTo`)
+- Relation filtering with dot-notation (generates efficient `EXISTS (...)` subqueries)
+- Rich criteria syntax: equality, NULL, IN lists, operators, LIKE search, deleted-mode
+- Pagination and sorting with safe identifier validation
+- Transactions helper (`withTransaction`) and explicit transaction control
+- Supports custom IDs (disable auto-increment) and bulk inserts
+- Doctrine DBAL QueryBuilder under the hood with parameter binding
 
 ### Installation
 ```bash
@@ -104,6 +113,49 @@ __construct(
 | Operator | `['age' => ['>', 18]]` | `age > ?` |
 | Search | `['search' => ['name' => 'John', 'email' => 'example']]` | `name LIKE ? AND email LIKE ?` |
 | Deleted filter | `['deleted' => 'only']` or `['deleted' => 'with']` | Filter soft-deleted records |
+
+### Relation Filters (Dot-notation)
+
+You can filter by related entities using dot-notation keys inside `criteria`. The repository will generate efficient `EXISTS (...)` subqueries based on your `relationConfig`.
+
+Examples (assuming `relationConfig` defines `comments` as `hasMany` and `user` as `belongsTo`):
+
+```php
+// hasMany: posts that have at least one comment with status = 'approved'
+$posts = $repo->findBy([
+    'comments.status' => 'approved',
+]);
+
+// belongsTo: posts whose user role is 'admin'
+$posts = $repo->findBy([
+    'user.role' => 'admin',
+]);
+
+// Multiple conditions across relations are combined with AND
+$posts = $repo->findBy([
+    'comments.status' => 'approved',
+    'user.role' => 'admin',
+]);
+
+// IN lists and operators are supported
+$posts = $repo->findBy([
+    'comments.type' => ['review', 'question'],            // IN (...)
+    'comments.created_at' => ['>=', '2024-01-01 00:00:00'], // operator
+]);
+
+// Null checks
+$posts = $repo->findBy([
+    'comments.deleted_at' => null, // IS NULL
+]);
+```
+
+Notes:
+- Relation types supported: `hasMany`, `belongsTo`.
+- Column linkage is derived from `relationConfig` (`[type, repositoryProperty, foreignKey, ...]`).
+- An empty IN list short-circuits to a non-matching condition.
+- If a relation is present in criteria with an empty filter set, it is treated as a pure existence check (EXISTS without extra predicates).
+- For safety and portability, filters are applied with parameters; table/column identifiers and generated aliases are validated/sanitized.
+- Internally uses raw `EXISTS ( ... )` for compatibility across Doctrine DBAL versions (see Expressions guidance in Doctrine DBAL docs).
 
 ### Retrieval Methods
 

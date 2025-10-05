@@ -8,7 +8,7 @@ namespace Solo\BaseRepository\Internal;
  * @internal
  * @template TModel of object
  */
-class ModelMapper
+final readonly class ModelMapper
 {
     /**
      * @param class-string<TModel> $modelClass

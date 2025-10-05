@@ -10,7 +10,7 @@ use Doctrine\DBAL\ArrayParameterType;
 /**
  * @internal
  */
-class CriteriaBuilder
+final class CriteriaBuilder
 {
     /**
      * @param non-empty-string $tableAlias

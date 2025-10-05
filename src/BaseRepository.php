@@ -6,12 +6,12 @@ namespace Solo\BaseRepository;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
-use Solo\BaseRepository\RepositoryInterface;
 use Solo\BaseRepository\Internal\ModelMapper;
 use Solo\BaseRepository\Internal\QueryFactory;
 use Solo\BaseRepository\Internal\CriteriaBuilder;
 use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\EagerLoadingService;
+use Solo\BaseRepository\Internal\RelationCriteriaApplier;
 
 /**
  * @template TModel of object
@@ -23,6 +23,7 @@ abstract class BaseRepository implements RepositoryInterface
     protected CriteriaBuilder $criteriaBuilder;
     protected ModelMapper $modelMapper;
     protected QueryFactory $queryFactory;
+    protected RelationCriteriaApplier $relationCriteriaApplier;
 
     protected ?SoftDeleteService $softDeleteService = null;
     protected ?EagerLoadingService $eagerLoadingService = null;
@@ -51,6 +52,7 @@ abstract class BaseRepository implements RepositoryInterface
         $this->modelMapper = new ModelMapper($this->modelClass, $this->mapperMethod);
         $this->queryFactory = new QueryFactory($this->connection, $this->table, $this->getTableAlias());
         $this->initializeServices();
+        $this->relationCriteriaApplier = new RelationCriteriaApplier($this->connection);
     }
 
     /**
@@ -88,6 +90,22 @@ abstract class BaseRepository implements RepositoryInterface
     private function getTableAlias(): string
     {
         return $this->tableAlias ?: substr($this->table, 0, 1);
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    protected function getTableName(): string
+    {
+        return $this->table;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    protected function getPrimaryKeyName(): string
+    {
+        return $this->primaryKey;
     }
 
     /**
@@ -435,8 +453,90 @@ abstract class BaseRepository implements RepositoryInterface
      */
     protected function applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true): QueryBuilder
     {
-        return $this->criteriaBuilder->applyCriteria($qb, $criteria, $useAlias);
+        // Support relation dot-notation in criteria, e.g. "relation.field" => value
+        // Split incoming criteria into base-table criteria and relation criteria
+        [$baseCriteria, $relationCriteria] = $this->extractRelationDotCriteria($criteria);
+
+        // Apply base criteria via CriteriaBuilder (keeps existing behavior)
+        $qb = $this->criteriaBuilder->applyCriteria($qb, $baseCriteria, $useAlias);
+
+        // Apply relation criteria as EXISTS-subqueries
+        if (!empty($relationCriteria)) {
+            $compiledRelations = $this->compileRelationMetadata();
+            $this->relationCriteriaApplier->apply(
+                $qb,
+                $this->getTableAlias(),
+                $this->getPrimaryKeyName(),
+                $compiledRelations,
+                $relationCriteria
+            );
+        }
+
+        return $qb;
     }
+
+    /**
+     * @param array<string, mixed> $criteria
+     * @return array{0: array<string, mixed>, 1: array<string, array<string, mixed>>}
+     */
+    private function extractRelationDotCriteria(array $criteria): array
+    {
+        $baseCriteria = [];
+        $relationCriteria = [];
+
+        foreach ($criteria as $key => $value) {
+            if (str_contains($key, '.')) {
+                [$relation, $field] = explode('.', $key, 2);
+
+                // Only treat as relation filter if relation exists in relationConfig
+                if (isset($this->relationConfig[$relation]) && $field !== '') {
+                    $relationCriteria[$relation][$field] = $value;
+                    continue;
+                }
+            }
+
+            $baseCriteria[$key] = $value;
+        }
+
+        return [$baseCriteria, $relationCriteria];
+    }
+
+
+
+    /**
+     * Compile relation metadata from relationConfig and repository graph.
+     * @return array<string, array{type:string, foreignKey:string, relatedTable:string, relatedPrimaryKey:string}>
+     */
+    private function compileRelationMetadata(): array
+    {
+        $result = [];
+        foreach ($this->relationConfig as $relation => $config) {
+            if (!is_array($config) || count($config) < 3) {
+                continue;
+            }
+            [$type, $repositoryProperty, $foreignKey] = $config;
+            if (!property_exists($this, (string) $repositoryProperty)) {
+                continue;
+            }
+            $relatedRepo = $this->{$repositoryProperty};
+            $relatedTable = $relatedRepo->getTableName();
+            $relatedPrimaryKey = $relatedRepo->getPrimaryKeyName();
+
+            if (!is_string($relatedTable) || $relatedTable === '') {
+                continue;
+            }
+
+            $result[$relation] = [
+                'type' => (string) $type,
+                'foreignKey' => (string) $foreignKey,
+                'relatedTable' => $relatedTable,
+                'relatedPrimaryKey' => (string) $relatedPrimaryKey,
+            ];
+        }
+        return $result;
+    }
+
+
 
     /**
      * @param array<string, 'ASC'|'DESC'> $orderBy
@@ -463,6 +563,8 @@ abstract class BaseRepository implements RepositoryInterface
             throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
         }
     }
+
+
 
     // Soft delete methods
 
