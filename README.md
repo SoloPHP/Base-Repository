@@ -109,6 +109,8 @@ __construct(
 |---|---|---|
 | Equality | `['status' => 'active']` | `status = ?` |
 | Null | `['deleted_at' => null]` | `deleted_at IS NULL` |
+| Null via operator | `['deleted_at' => ['=', null]]` | `deleted_at IS NULL` |
+| Not Null via operator | `['deleted_at' => ['!=', null]]` or `['deleted_at' => ['<>', null]]` | `deleted_at IS NOT NULL` |
 | IN (list) | `['id' => [1,2,3]]` | `id IN (?, ?, ?)` |
 | Operator | `['age' => ['>', 18]]` | `age > ?` |
 | Search | `['search' => ['name' => 'John', 'email' => 'example']]` | `name LIKE ? AND email LIKE ?` |
@@ -146,6 +148,17 @@ $posts = $repo->findBy([
 // Null checks
 $posts = $repo->findBy([
     'comments.deleted_at' => null, // IS NULL
+]);
+
+// Null checks via operator
+$posts = $repo->findBy([
+    'comments.deleted_at' => ['=', null],   // IS NULL
+]);
+
+// Not-null checks via operator
+$posts = $repo->findBy([
+    'comments.deleted_at' => ['!=', null],  // IS NOT NULL
+    // or ['<>', null]
 ]);
 ```
 

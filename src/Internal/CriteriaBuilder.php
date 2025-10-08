@@ -48,6 +48,33 @@ final class CriteriaBuilder
                 continue;
             }
 
+            // Проверяем на оператор РАНЬШЕ, чем на список для IN
+            if (
+                is_array($value)
+                && array_key_exists(0, $value)
+                && array_key_exists(1, $value)
+                && is_string($value[0])
+            ) {
+                [$operator, $val] = $value;
+                $this->assertSafeOperator($operator);
+                if ($val === null) {
+                    $upperOp = strtoupper($operator);
+                    if ($upperOp === '=') {
+                        $qb->andWhere("{$quotedField} IS NULL");
+                        continue;
+                    }
+                    if ($upperOp === '!=' || $upperOp === '<>') {
+                        $qb->andWhere("{$quotedField} IS NOT NULL");
+                        continue;
+                    }
+                }
+
+                $qb->andWhere("{$quotedField} {$operator} :{$field}");
+                $qb->setParameter($field, $val);
+                continue;
+            }
+
+            // Проверяем на список для IN ПОСЛЕ проверки на оператор
             if (is_array($value) && array_is_list($value)) {
                 $qb->andWhere($qb->expr()->in($quotedField, ':' . $field));
                 $paramType = ArrayParameterType::STRING;
@@ -55,14 +82,6 @@ final class CriteriaBuilder
                     $paramType = ArrayParameterType::INTEGER;
                 }
                 $qb->setParameter($field, $value, $paramType);
-                continue;
-            }
-
-            if (is_array($value) && isset($value[0], $value[1]) && is_string($value[0])) {
-                [$operator, $val] = $value;
-                $this->assertSafeOperator($operator);
-                $qb->andWhere("{$quotedField} {$operator} :{$field}");
-                $qb->setParameter($field, $val);
                 continue;
             }
 

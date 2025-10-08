@@ -104,6 +104,28 @@ final readonly class RelationCriteriaApplier
                     continue;
                 }
 
+                // Проверяем на оператор РАНЬШЕ, чем на список для IN
+                if (is_array($val) && array_key_exists(0, $val) && array_key_exists(1, $val) && is_string($val[0])) {
+                    [$operator, $value] = $val;
+                    $this->assertSafeOperator($operator);
+                    if ($value === null) {
+                        $upperOp = strtoupper($operator);
+                        if ($upperOp === '=') {
+                            $sub->andWhere("{$alias}.{$field} IS NULL");
+                            continue;
+                        }
+                        if ($upperOp === '!=' || $upperOp === '<>') {
+                            $sub->andWhere("{$alias}.{$field} IS NOT NULL");
+                            continue;
+                        }
+                    }
+
+                    $sub->andWhere("{$alias}.{$field} {$operator} :{$paramName}");
+                    $qb->setParameter($paramName, $value);
+                    continue;
+                }
+
+                // Проверяем на список для IN ПОСЛЕ проверки на оператор
                 if (is_array($val) && array_is_list($val)) {
                     if ($val === []) {
                         $sub->andWhere('1 = 0');
@@ -111,14 +133,6 @@ final readonly class RelationCriteriaApplier
                     }
                     $sub->andWhere($sub->expr()->in("{$alias}.{$field}", ':' . $paramName));
                     $qb->setParameter($paramName, $val, $this->determineArrayParamType($val));
-                    continue;
-                }
-
-                if (is_array($val) && isset($val[0], $val[1]) && is_string($val[0])) {
-                    [$operator, $value] = $val;
-                    $this->assertSafeOperator($operator);
-                    $sub->andWhere("{$alias}.{$field} {$operator} :{$paramName}");
-                    $qb->setParameter($paramName, $value);
                     continue;
                 }
 
