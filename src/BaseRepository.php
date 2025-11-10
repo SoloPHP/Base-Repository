@@ -336,9 +336,11 @@ abstract class BaseRepository implements RepositoryInterface
         $qb = $this->connection->createQueryBuilder()
             ->update($this->table);
 
+        // Set update values with prefixed parameter names to avoid conflicts with criteria parameters
         foreach ($data as $column => $value) {
-            $qb->set($column, ':' . $column)
-               ->setParameter($column, $value);
+            $paramName = 'update_' . $column;
+            $qb->set($column, ':' . $paramName)
+               ->setParameter($paramName, $value);
         }
 
         $qb = $this->applyCriteria($qb, $criteria, false);
@@ -457,6 +459,12 @@ abstract class BaseRepository implements RepositoryInterface
         // Split incoming criteria into base-table criteria and relation criteria
         [$baseCriteria, $relationCriteria] = $this->extractRelationDotCriteria($criteria);
 
+        // Remove 'deleted' field from criteria if soft delete is not enabled
+        // to prevent CriteriaBuilder from trying to apply deleted_at conditions
+        if (!$this->softDeleteService && isset($baseCriteria['deleted'])) {
+            unset($baseCriteria['deleted']);
+        }
+
         // Apply base criteria via CriteriaBuilder (keeps existing behavior)
         $qb = $this->criteriaBuilder->applyCriteria($qb, $baseCriteria, $useAlias);
 
@@ -488,9 +496,18 @@ abstract class BaseRepository implements RepositoryInterface
             if (str_contains($key, '.')) {
                 [$relation, $field] = explode('.', $key, 2);
 
+                // Check for NOT EXISTS prefix (!)
+                $isNotExists = false;
+                if (str_starts_with($relation, '!')) {
+                    $isNotExists = true;
+                    $relation = substr($relation, 1);
+                }
+
                 // Only treat as relation filter if relation exists in relationConfig
                 if (isset($this->relationConfig[$relation]) && $field !== '') {
-                    $relationCriteria[$relation][$field] = $value;
+                    // Store with ! prefix if NOT EXISTS
+                    $relationKey = $isNotExists ? '!' . $relation : $relation;
+                    $relationCriteria[$relationKey][$field] = $value;
                     continue;
                 }
             }

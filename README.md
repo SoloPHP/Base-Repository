@@ -10,7 +10,7 @@ Lightweight base repository with built-in soft delete and eager loading capabili
 
 - Soft delete with configurable `deleted_at` column
 - Eager loading via `relationConfig` (supports `hasMany` and `belongsTo`)
-- Relation filtering with dot-notation (generates efficient `EXISTS (...)` subqueries)
+- Relation filtering with dot-notation (generates efficient `EXISTS (...)` and `NOT EXISTS (...)` subqueries)
 - Rich criteria syntax: equality, NULL, IN lists, operators, LIKE search, deleted-mode
 - Pagination and sorting with safe identifier validation
 - Transactions helper (`withTransaction`) and explicit transaction control
@@ -160,11 +160,28 @@ $posts = $repo->findBy([
     'comments.deleted_at' => ['!=', null],  // IS NOT NULL
     // or ['<>', null]
 ]);
+
+// NOT EXISTS: posts that have NO comments with status = 'approved'
+$posts = $repo->findBy([
+    '!comments.status' => 'approved',  // Use ! prefix for NOT EXISTS
+]);
+
+// NOT EXISTS: posts that have NO comments at all
+$posts = $repo->findBy([
+    '!comments.id' => ['>', 0],  // Any condition with ! prefix creates NOT EXISTS
+]);
+
+// Combining EXISTS and NOT EXISTS
+$posts = $repo->findBy([
+    'user.role' => 'admin',           // EXISTS: has user with role = 'admin'
+    '!comments.status' => 'spam',     // NOT EXISTS: has no spam comments
+]);
 ```
 
 Notes:
 - Relation types supported: `hasMany`, `belongsTo`.
 - Column linkage is derived from `relationConfig` (`[type, repositoryProperty, foreignKey, ...]`).
+- Use `!` prefix before relation name (e.g., `!comments.field`) to generate `NOT EXISTS` instead of `EXISTS`.
 - An empty IN list short-circuits to a non-matching condition.
 - If a relation is present in criteria with an empty filter set, it is treated as a pure existence check (EXISTS without extra predicates).
 - For safety and portability, filters are applied with parameters; table/column identifiers and generated aliases are validated/sanitized.

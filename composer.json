@@ -15,11 +15,17 @@
       "Solo\\BaseRepository\\": "src/"
     }
   },
+  "autoload-dev": {
+    "psr-4": {
+      "Solo\\BaseRepository\\Tests\\": "tests/"
+    }
+  },
   "require": {
     "php": "^8.3",
     "doctrine/dbal": "^4.3"
   },
   "require-dev": {
+    "phpunit/phpunit": "^11.0",
     "phpstan/phpstan": "^2.0",
     "squizlabs/php_codesniffer": "^3.13"
   },
@@ -29,7 +35,8 @@
     "analyze": "phpstan analyze",
     "test": [
       "@cs-check",
-      "@analyze"
+      "@analyze",
+      "phpunit"
     ]
   },
   "minimum-stability": "stable",

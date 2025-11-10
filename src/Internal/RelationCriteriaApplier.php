@@ -32,8 +32,18 @@ final readonly class RelationCriteriaApplier
         foreach ($criteria as $key => $value) {
             if (str_contains($key, '.')) {
                 [$relation, $field] = explode('.', $key, 2);
+
+                // Check for NOT EXISTS prefix (!)
+                $isNotExists = false;
+                if (str_starts_with($relation, '!')) {
+                    $isNotExists = true;
+                    $relation = substr($relation, 1);
+                }
+
                 if ($field !== '' && isset($relationConfig[$relation])) {
-                    $relationCriteria[$relation][$field] = $value;
+                    // Store with ! prefix if NOT EXISTS
+                    $relationKey = $isNotExists ? '!' . $relation : $relation;
+                    $relationCriteria[$relationKey][$field] = $value;
                     continue;
                 }
             }
@@ -68,7 +78,15 @@ final readonly class RelationCriteriaApplier
         $paramIndex = 0;
 
         foreach ($relationCriteria as $relation => $fields) {
-            $compiled = $compiledRelations[$relation] ?? null;
+            // Check for NOT EXISTS prefix (!)
+            $isNotExists = false;
+            $actualRelation = $relation;
+            if (str_starts_with($relation, '!')) {
+                $isNotExists = true;
+                $actualRelation = substr($relation, 1);
+            }
+
+            $compiled = $compiledRelations[$actualRelation] ?? null;
             if ($compiled === null) {
                 continue;
             }
@@ -78,7 +96,7 @@ final readonly class RelationCriteriaApplier
             $relatedTable = $compiled['relatedTable'];
             $relatedPrimaryKey = $compiled['relatedPrimaryKey'];
 
-            $alias = 'rel_' . preg_replace('/[^A-Za-z0-9_]/', '_', (string) $relation);
+            $alias = 'rel_' . preg_replace('/[^A-Za-z0-9_]/', '_', (string) $actualRelation);
 
             $sub = $this->connection->createQueryBuilder()
                 ->select('1')
@@ -97,7 +115,7 @@ final readonly class RelationCriteriaApplier
                     continue;
                 }
 
-                $paramName = 'rel_' . $relation . '_' . $field . '_' . (++$paramIndex);
+                $paramName = 'rel_' . $actualRelation . '_' . $field . '_' . (++$paramIndex);
 
                 if ($val === null) {
                     $sub->andWhere("{$alias}.{$field} IS NULL");
@@ -140,7 +158,8 @@ final readonly class RelationCriteriaApplier
                 $qb->setParameter($paramName, $val);
             }
 
-            $qb->andWhere('EXISTS (' . $sub->getSQL() . ')');
+            $existsClause = $isNotExists ? 'NOT EXISTS' : 'EXISTS';
+            $qb->andWhere("{$existsClause} (" . $sub->getSQL() . ')');
         }
     }
 
