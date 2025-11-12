@@ -68,4 +68,3 @@ class QueryFactoryTest extends TestCase
         $this->assertStringContainsString('id = :id', $sql);
     }
 }
-

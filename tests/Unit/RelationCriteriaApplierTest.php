@@ -396,4 +396,3 @@ class RelationCriteriaApplierTest extends TestCase
         $this->assertStringContainsString('IS NULL', $sql);
     }
 }
-

@@ -154,12 +154,12 @@ class BaseRepositoryTest extends TestCase
         // Verify by finding updated records
         $updated1 = $this->repository->find($user1->id);
         $updated2 = $this->repository->find($user2->id);
-        
+
         $this->assertNotNull($updated1);
         $this->assertNotNull($updated2);
         $this->assertEquals('updated', $updated1->status);
         $this->assertEquals('updated', $updated2->status);
-        
+
         // Verify user3 was not updated
         $user3After = $this->repository->find($user3->id);
         $this->assertNotNull($user3After);
@@ -372,4 +372,3 @@ class TestPostRepository extends BaseRepository
         parent::__construct($connection, TestPost::class, 'posts');
     }
 }
-

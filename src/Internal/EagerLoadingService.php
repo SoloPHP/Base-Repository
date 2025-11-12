@@ -97,6 +97,16 @@ final class EagerLoadingService
             }
             $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
             $this->joinHasMany($items, $related, $foreignKey, $setter);
+        } elseif ($type === 'hasOne') {
+            $ids = $this->pluckIds($items);
+            if (empty($ids)) {
+                foreach ($items as $item) {
+                    $item->{$setter}(null);
+                }
+                return;
+            }
+            $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
+            $this->joinHasOne($items, $related, $foreignKey, $setter);
         }
     }
 
@@ -174,6 +184,29 @@ final class EagerLoadingService
         // Set relations
         foreach ($items as $item) {
             $item->{$setter}($relatedMap[$item->id] ?? []);
+        }
+    }
+
+    /**
+     * Join has-one relations
+     */
+    private function joinHasOne(array $items, array $related, string $foreignKey, string $setter): void
+    {
+        if (empty($items)) {
+            return;
+        }
+
+        // Map related items by foreign key (taking first match for each foreign key)
+        $relatedMap = [];
+        foreach ($related as $item) {
+            if (!isset($relatedMap[$item->{$foreignKey}])) {
+                $relatedMap[$item->{$foreignKey}] = $item;
+            }
+        }
+
+        // Set relations
+        foreach ($items as $item) {
+            $item->{$setter}($relatedMap[$item->id] ?? null);
         }
     }
 

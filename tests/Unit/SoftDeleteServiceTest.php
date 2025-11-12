@@ -68,4 +68,3 @@ class SoftDeleteServiceTest extends TestCase
         $this->assertArrayHasKey('removed_at', $data);
     }
 }
-

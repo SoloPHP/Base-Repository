@@ -166,7 +166,7 @@ class CriteriaBuilderTest extends TestCase
         $sql = $qb->getSQL();
         $this->assertStringContainsString('ORDER BY', $sql);
         $this->assertStringContainsString('name', $sql);
-        
+
         // Test second order by
         $qb2 = $connection->createQueryBuilder()
             ->select('*')
@@ -216,4 +216,3 @@ class CriteriaBuilderTest extends TestCase
         $this->builder->applyCriteria($qb, ['age' => ['UNSAFE', 18]]);
     }
 }
-

@@ -63,4 +63,3 @@ class TestModel
         return new self($data['id'], $data['name']);
     }
 }
-

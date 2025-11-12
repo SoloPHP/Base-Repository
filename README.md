@@ -9,7 +9,7 @@ Lightweight base repository with built-in soft delete and eager loading capabili
 ## Features
 
 - Soft delete with configurable `deleted_at` column
-- Eager loading via `relationConfig` (supports `hasMany` and `belongsTo`)
+- Eager loading via `relationConfig` (supports `hasMany`, `hasOne`, and `belongsTo`)
 - Relation filtering with dot-notation (generates efficient `EXISTS (...)` and `NOT EXISTS (...)` subqueries)
 - Rich criteria syntax: equality, NULL, IN lists, operators, LIKE search, deleted-mode
 - Pagination and sorting with safe identifier validation
@@ -179,7 +179,7 @@ $posts = $repo->findBy([
 ```
 
 Notes:
-- Relation types supported: `hasMany`, `belongsTo`.
+- Relation types supported: `hasMany`, `hasOne`, `belongsTo`.
 - Column linkage is derived from `relationConfig` (`[type, repositoryProperty, foreignKey, ...]`).
 - Use `!` prefix before relation name (e.g., `!comments.field`) to generate `NOT EXISTS` instead of `EXISTS`.
 - An empty IN list short-circuits to a non-matching condition.
@@ -322,11 +322,40 @@ class PostRepository extends BaseRepository
 'relationName' => [type, repositoryProperty, foreignKey, setterMethod, ?sort]
 ```
 
-- **type**: `'belongsTo'` or `'hasMany'`
+- **type**: `'belongsTo'`, `'hasOne'`, or `'hasMany'`
 - **repositoryProperty**: Property name of related repository on current repository
 - **foreignKey**: Foreign key column name
 - **setterMethod**: Method to call on model to set the relation
-- **sort**: Optional sorting for hasMany relations
+- **sort**: Optional sorting for `hasMany` and `hasOne` relations
+
+### Relation Types
+
+#### belongsTo
+The model has a foreign key pointing to the related model's primary key.
+```php
+// User belongs to Company (users.company_id -> companies.id)
+protected array $relationConfig = [
+    'company' => ['belongsTo', 'companyRepository', 'company_id', 'setCompany']
+];
+```
+
+#### hasOne
+The related model has a foreign key pointing to this model's primary key. Returns a single object or null.
+```php
+// User has one Profile (profiles.user_id -> users.id)
+protected array $relationConfig = [
+    'profile' => ['hasOne', 'profileRepository', 'user_id', 'setProfile']
+];
+```
+
+#### hasMany
+The related model has a foreign key pointing to this model's primary key. Returns an array of objects.
+```php
+// Post has many Comments (comments.post_id -> posts.id)
+protected array $relationConfig = [
+    'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', ['created_at' => 'ASC']]
+];
+```
 
 ### Usage
 ```php
