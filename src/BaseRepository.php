@@ -232,7 +232,7 @@ abstract class BaseRepository implements RepositoryInterface
 
                     foreach ($record as $column => $value) {
                         $qb->setValue($column, ':' . $column)
-                           ->setParameter($column, $value);
+                            ->setParameter($column, $value);
                     }
 
                     $affected += $qb->executeStatement();
@@ -261,7 +261,7 @@ abstract class BaseRepository implements RepositoryInterface
 
         foreach ($data as $column => $value) {
             $qb->setValue($column, ':' . $column)
-               ->setParameter($column, $value);
+                ->setParameter($column, $value);
         }
 
         $qb->executeStatement();
@@ -300,7 +300,7 @@ abstract class BaseRepository implements RepositoryInterface
 
         foreach ($data as $column => $value) {
             $qb->set($column, ':' . $column)
-               ->setParameter($column, $value);
+                ->setParameter($column, $value);
         }
 
         $qb->executeStatement();
@@ -340,7 +340,7 @@ abstract class BaseRepository implements RepositoryInterface
         foreach ($data as $column => $value) {
             $paramName = 'update_' . $column;
             $qb->set($column, ':' . $paramName)
-               ->setParameter($paramName, $value);
+                ->setParameter($paramName, $value);
         }
 
         $qb = $this->applyCriteria($qb, $criteria, false);
@@ -406,6 +406,53 @@ abstract class BaseRepository implements RepositoryInterface
             return 0;
         }
         return (int) $value;
+    }
+
+    public function sum(string $column, array $criteria = []): int|float
+    {
+        return (float) $this->aggregate('SUM', $column, $criteria);
+    }
+
+    public function avg(string $column, array $criteria = []): int|float
+    {
+        return (float) $this->aggregate('AVG', $column, $criteria);
+    }
+
+    public function min(string $column, array $criteria = []): mixed
+    {
+        return $this->aggregate('MIN', $column, $criteria);
+    }
+
+    public function max(string $column, array $criteria = []): mixed
+    {
+        return $this->aggregate('MAX', $column, $criteria);
+    }
+
+    /**
+     * @param string $function
+     * @param string $column
+     * @param array<string, mixed> $criteria
+     * @return mixed
+     */
+    protected function aggregate(string $function, string $column, array $criteria): mixed
+    {
+        // Apply soft delete logic if enabled
+        if ($this->softDeleteService) {
+            $criteria = $this->softDeleteService->applyCriteria($criteria);
+        }
+
+        $this->assertSafeIdentifier($column);
+
+        // Use table alias for ambiguity resolution
+        $columnName = $this->getTableAlias() . '.' . $column;
+
+        $qb = $this->queryFactory->builder()
+            ->select(sprintf('%s(%s)', $function, $columnName))
+            ->from($this->table, $this->getTableAlias());
+
+        $qb = $this->applyCriteria($qb, $criteria);
+
+        return $qb->executeQuery()->fetchOne();
     }
 
     public function beginTransaction(): bool

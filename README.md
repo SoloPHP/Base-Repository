@@ -213,6 +213,10 @@ Notes:
 |---|---|
 | `exists(array $criteria): bool` | Check existence |
 | `count(array $criteria): int` | Count rows |
+| `sum(string $column, array $criteria = []): int\|float` | Sum of column values |
+| `avg(string $column, array $criteria = []): int\|float` | Average of column values |
+| `min(string $column, array $criteria = []): mixed` | Minimum value |
+| `max(string $column, array $criteria = []): mixed` | Maximum value |
 
 ## Soft Delete
 
@@ -426,6 +430,12 @@ $repo->withTransaction(function (UserRepository $r) {
     $user = $r->create(['name' => 'Temp', 'email' => 'temp@example.com']);
     $r->update($user->id, ['name' => 'Temp Updated']);
 });
+
+// Aggregation
+$total = $repo->sum('amount', ['status' => 'paid']);
+$average = $repo->avg('score', ['active' => true]);
+$minPrice = $repo->min('price');
+$maxPrice = $repo->max('price');
 ```
 
 ### Extending Repositories

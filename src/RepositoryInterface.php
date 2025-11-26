@@ -46,6 +46,34 @@ interface RepositoryInterface
      */
     public function count(array $criteria): int;
 
+    /**
+     * @param string $column
+     * @param array<string, mixed> $criteria
+     * @return int|float
+     */
+    public function sum(string $column, array $criteria = []): int|float;
+
+    /**
+     * @param string $column
+     * @param array<string, mixed> $criteria
+     * @return int|float
+     */
+    public function avg(string $column, array $criteria = []): int|float;
+
+    /**
+     * @param string $column
+     * @param array<string, mixed> $criteria
+     * @return mixed
+     */
+    public function min(string $column, array $criteria = []): mixed;
+
+    /**
+     * @param string $column
+     * @param array<string, mixed> $criteria
+     * @return mixed
+     */
+    public function max(string $column, array $criteria = []): mixed;
+
 
     /**
      * Create a record and return the hydrated model
