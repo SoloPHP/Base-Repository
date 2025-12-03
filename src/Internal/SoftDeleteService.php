@@ -16,11 +16,11 @@ final readonly class SoftDeleteService
      */
     public function applyCriteria(array $criteria): array
     {
-        if (isset($criteria['deleted'])) {
+        if (isset($criteria[$this->deletedAtColumn])) {
             return $criteria;
         }
 
-        $criteria['deleted'] = 'without';
+        $criteria[$this->deletedAtColumn] = null;
         return $criteria;
     }
 
@@ -38,14 +38,6 @@ final readonly class SoftDeleteService
     public function getRestoreData(): array
     {
         return [$this->deletedAtColumn => null];
-    }
-
-    /**
-     * Get deleted at column name
-     */
-    public function getDeletedAtColumn(): string
-    {
-        return $this->deletedAtColumn;
     }
 
     private function getCurrentTimestamp(): string

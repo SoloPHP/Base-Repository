@@ -86,6 +86,77 @@ class AggregationTest extends TestCase
 
         $this->assertEquals(100, $sum);
     }
+
+    public function testSumReturnsZeroOnEmptyTable(): void
+    {
+        $sum = $this->repository->sum('total');
+
+        $this->assertEquals(0.0, $sum);
+    }
+
+    public function testAvgReturnsZeroOnEmptyTable(): void
+    {
+        $avg = $this->repository->avg('total');
+
+        $this->assertEquals(0.0, $avg);
+    }
+
+    public function testMinReturnsNullOnEmptyTable(): void
+    {
+        $min = $this->repository->min('total');
+
+        $this->assertNull($min);
+    }
+
+    public function testMaxReturnsNullOnEmptyTable(): void
+    {
+        $max = $this->repository->max('total');
+
+        $this->assertNull($max);
+    }
+
+    public function testCountOnEmptyTable(): void
+    {
+        $count = $this->repository->count([]);
+
+        $this->assertEquals(0, $count);
+    }
+
+    public function testExistsOnEmptyTable(): void
+    {
+        $this->assertFalse($this->repository->exists([]));
+    }
+
+    public function testSumWithNoCriteriaMatch(): void
+    {
+        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
+
+        $sum = $this->repository->sum('total', ['payment_status' => 'nonexistent']);
+
+        $this->assertEquals(0.0, $sum);
+    }
+
+    public function testCountWithOperator(): void
+    {
+        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
+        $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
+        $this->repository->create(['total' => 25, 'payment_status' => 'pending']);
+
+        $count = $this->repository->count(['total' => ['>=', 50]]);
+
+        $this->assertEquals(2, $count);
+    }
+
+    public function testSumWithInOperator(): void
+    {
+        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
+        $this->repository->create(['total' => 50, 'payment_status' => 'pending']);
+        $this->repository->create(['total' => 25, 'payment_status' => 'cancelled']);
+
+        $sum = $this->repository->sum('total', ['payment_status' => ['IN', ['paid', 'pending']]]);
+
+        $this->assertEquals(150, $sum);
+    }
 }
 
 // Test model

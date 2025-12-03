@@ -307,6 +307,39 @@ class BaseRepositoryTest extends TestCase
 
         $this->assertEquals(0, $this->repository->count([]));
     }
+
+    public function testInsertManyWithEmptyRecords(): void
+    {
+        $affected = $this->repository->insertMany([]);
+
+        $this->assertEquals(0, $affected);
+    }
+
+    public function testFindOneByWithOrderBy(): void
+    {
+        $this->repository->create(['name' => 'B User', 'email' => 'b@example.com']);
+        $this->repository->create(['name' => 'A User', 'email' => 'a@example.com']);
+        $this->repository->create(['name' => 'C User', 'email' => 'c@example.com']);
+
+        $user = $this->repository->findOneBy([], ['name' => 'ASC']);
+
+        $this->assertNotNull($user);
+        $this->assertEquals('A User', $user->name);
+    }
+
+    public function testUpdateByReturnsZeroWhenNoMatch(): void
+    {
+        $affected = $this->repository->updateBy(['status' => 'nonexistent'], ['status' => 'updated']);
+
+        $this->assertEquals(0, $affected);
+    }
+
+    public function testDeleteByReturnsZeroWhenNoMatch(): void
+    {
+        $affected = $this->repository->deleteBy(['status' => 'nonexistent']);
+
+        $this->assertEquals(0, $affected);
+    }
 }
 
 // Test model

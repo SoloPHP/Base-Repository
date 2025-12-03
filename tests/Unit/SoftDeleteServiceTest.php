@@ -9,25 +9,25 @@ use Solo\BaseRepository\Internal\SoftDeleteService;
 
 class SoftDeleteServiceTest extends TestCase
 {
-    public function testApplyCriteriaAddsDeletedWithoutWhenNotSet(): void
+    public function testApplyCriteriaAddsDeletedAtNullWhenNotSet(): void
     {
         $service = new SoftDeleteService('deleted_at');
 
         $criteria = ['status' => 'active'];
         $result = $service->applyCriteria($criteria);
 
-        $this->assertArrayHasKey('deleted', $result);
-        $this->assertEquals('without', $result['deleted']);
+        $this->assertArrayHasKey('deleted_at', $result);
+        $this->assertNull($result['deleted_at']);
     }
 
-    public function testApplyCriteriaPreservesDeletedWhenSet(): void
+    public function testApplyCriteriaPreservesDeletedAtWhenSet(): void
     {
         $service = new SoftDeleteService('deleted_at');
 
-        $criteria = ['deleted' => 'only', 'status' => 'active'];
+        $criteria = ['deleted_at' => ['!=', null], 'status' => 'active'];
         $result = $service->applyCriteria($criteria);
 
-        $this->assertEquals('only', $result['deleted']);
+        $this->assertEquals(['!=', null], $result['deleted_at']);
     }
 
     public function testGetSoftDeleteData(): void
@@ -51,20 +51,17 @@ class SoftDeleteServiceTest extends TestCase
         $this->assertNull($data['deleted_at']);
     }
 
-    public function testGetDeletedAtColumn(): void
-    {
-        $service = new SoftDeleteService('deleted_at');
-
-        $this->assertEquals('deleted_at', $service->getDeletedAtColumn());
-    }
-
     public function testCustomDeletedAtColumn(): void
     {
         $service = new SoftDeleteService('removed_at');
 
-        $this->assertEquals('removed_at', $service->getDeletedAtColumn());
-
         $data = $service->getSoftDeleteData();
         $this->assertArrayHasKey('removed_at', $data);
+
+        $restoreData = $service->getRestoreData();
+        $this->assertArrayHasKey('removed_at', $restoreData);
+
+        $criteria = $service->applyCriteria([]);
+        $this->assertArrayHasKey('removed_at', $criteria);
     }
 }

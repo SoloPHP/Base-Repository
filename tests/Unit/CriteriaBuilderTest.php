@@ -15,7 +15,7 @@ class CriteriaBuilderTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->builder = new CriteriaBuilder('t', 'deleted_at');
+        $this->builder = new CriteriaBuilder('t');
     }
 
     public function testApplyCriteriaWithEquality(): void
@@ -97,63 +97,6 @@ class CriteriaBuilderTest extends TestCase
         $this->assertStringContainsString('IS NOT NULL', $sql);
     }
 
-    public function testApplyCriteriaWithSearch(): void
-    {
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $qb = $connection->createQueryBuilder()
-            ->select('*')
-            ->from('users', 't');
-
-        $this->builder->applyCriteria($qb, ['search' => ['name' => 'John', 'email' => 'test']]);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('LIKE', $sql);
-        $this->assertStringContainsString('name', $sql);
-        $this->assertStringContainsString('email', $sql);
-    }
-
-    public function testApplyCriteriaWithDeletedOnly(): void
-    {
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $qb = $connection->createQueryBuilder()
-            ->select('*')
-            ->from('users', 't');
-
-        $this->builder->applyCriteria($qb, ['deleted' => 'only']);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('IS NOT NULL', $sql);
-        $this->assertStringContainsString('deleted_at', $sql);
-    }
-
-    public function testApplyCriteriaWithDeletedWith(): void
-    {
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $qb = $connection->createQueryBuilder()
-            ->select('*')
-            ->from('users', 't');
-
-        $this->builder->applyCriteria($qb, ['deleted' => 'with']);
-
-        $sql = $qb->getSQL();
-        // Should not have deleted_at condition
-        $this->assertStringNotContainsString('deleted_at', $sql);
-    }
-
-    public function testApplyCriteriaWithDeletedWithout(): void
-    {
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $qb = $connection->createQueryBuilder()
-            ->select('*')
-            ->from('users', 't');
-
-        $this->builder->applyCriteria($qb, ['deleted' => 'without']);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('IS NULL', $sql);
-        $this->assertStringContainsString('deleted_at', $sql);
-    }
-
     public function testApplyOrderBy(): void
     {
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
@@ -214,5 +157,84 @@ class CriteriaBuilderTest extends TestCase
         $this->expectExceptionMessage('Unsafe operator');
 
         $this->builder->applyCriteria($qb, ['age' => ['UNSAFE', 18]]);
+    }
+
+    public function testApplyCriteriaWithInOperator(): void
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $connection->createQueryBuilder()
+            ->select('*')
+            ->from('users', 't');
+
+        $this->builder->applyCriteria($qb, ['status' => ['IN', ['active', 'pending']]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('IN', $sql);
+    }
+
+    public function testApplyCriteriaWithNotInOperator(): void
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $connection->createQueryBuilder()
+            ->select('*')
+            ->from('users', 't');
+
+        $this->builder->applyCriteria($qb, ['status' => ['NOT IN', ['deleted', 'banned']]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('NOT IN', $sql);
+    }
+
+    public function testApplyCriteriaWithInOperatorSingleValue(): void
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $connection->createQueryBuilder()
+            ->select('*')
+            ->from('users', 't');
+
+        $this->builder->applyCriteria($qb, ['status' => ['IN', 'active']]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('IN', $sql);
+    }
+
+    public function testApplyCriteriaWithInOperatorIntegerList(): void
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $connection->createQueryBuilder()
+            ->select('*')
+            ->from('users', 't');
+
+        $this->builder->applyCriteria($qb, ['id' => ['IN', [1, 2, 3]]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('IN', $sql);
+    }
+
+    public function testApplyCriteriaWithNotEqualNullOperator(): void
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $connection->createQueryBuilder()
+            ->select('*')
+            ->from('users', 't');
+
+        $this->builder->applyCriteria($qb, ['deleted_at' => ['<>', null]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('IS NOT NULL', $sql);
+    }
+
+    public function testApplyCriteriaWithStringInList(): void
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $connection->createQueryBuilder()
+            ->select('*')
+            ->from('users', 't');
+
+        // Use explicit IN operator for string lists
+        $this->builder->applyCriteria($qb, ['name' => ['IN', ['Alice', 'Bob', 'Charlie']]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('IN', $sql);
     }
 }

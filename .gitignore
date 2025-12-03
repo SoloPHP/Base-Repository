@@ -3,6 +3,8 @@
 /phpunit.xml
 .phpunit.result.cache
 /.phpunit.cache/
+/coverage/
+/coverage.xml
 /.php-cs-fixer.cache
 composer.lock
 .idea

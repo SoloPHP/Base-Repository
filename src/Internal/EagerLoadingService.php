@@ -89,22 +89,10 @@ final class EagerLoadingService
             }
         } elseif ($type === 'hasMany') {
             $ids = $this->pluckIds($items);
-            if (empty($ids)) {
-                foreach ($items as $item) {
-                    $item->{$setter}([]);
-                }
-                return;
-            }
             $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
             $this->joinHasMany($items, $related, $foreignKey, $setter);
         } elseif ($type === 'hasOne') {
             $ids = $this->pluckIds($items);
-            if (empty($ids)) {
-                foreach ($items as $item) {
-                    $item->{$setter}(null);
-                }
-                return;
-            }
             $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
             $this->joinHasOne($items, $related, $foreignKey, $setter);
         }
@@ -171,10 +159,6 @@ final class EagerLoadingService
      */
     private function joinHasMany(array $items, array $related, string $foreignKey, string $setter): void
     {
-        if (empty($items)) {
-            return;
-        }
-
         // Group related items by foreign key
         $relatedMap = [];
         foreach ($related as $item) {
@@ -192,10 +176,6 @@ final class EagerLoadingService
      */
     private function joinHasOne(array $items, array $related, string $foreignKey, string $setter): void
     {
-        if (empty($items)) {
-            return;
-        }
-
         // Map related items by foreign key (taking first match for each foreign key)
         $relatedMap = [];
         foreach ($related as $item) {
@@ -211,18 +191,14 @@ final class EagerLoadingService
     }
 
     /**
-     * Extract unique values from items array by field
+     * Extract unique non-null values from items array by field
      */
     private function pluckUnique(array $items, string $field): array
     {
-        $values = [];
-        foreach ($items as $item) {
-            $value = $item->{$field} ?? null;
-            if ($value !== null) {
-                $values[$value] = true;
-            }
-        }
-        return array_keys($values);
+        return array_values(array_unique(array_filter(
+            array_column($items, $field),
+            fn($v) => $v !== null
+        )));
     }
 
     /**
@@ -230,10 +206,6 @@ final class EagerLoadingService
      */
     private function pluckIds(array $items): array
     {
-        $ids = [];
-        foreach ($items as $item) {
-            $ids[] = $item->id;
-        }
-        return $ids;
+        return array_column($items, 'id');
     }
 }

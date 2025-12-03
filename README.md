@@ -3,6 +3,7 @@
 [![Packagist Version](https://img.shields.io/packagist/v/solophp/base-repository.svg?style=flat-square)](https://packagist.org/packages/solophp/base-repository)
 [![PHP Version](https://img.shields.io/packagist/php-v/solophp/base-repository.svg?style=flat-square)](https://packagist.org/packages/solophp/base-repository)
 [![License](https://img.shields.io/packagist/l/solophp/base-repository.svg?style=flat-square)](LICENSE)
+[![Code Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg?style=flat-square)]()
 
 Lightweight base repository with built-in soft delete and eager loading capabilities.
 
@@ -11,7 +12,7 @@ Lightweight base repository with built-in soft delete and eager loading capabili
 - Soft delete with configurable `deleted_at` column
 - Eager loading via `relationConfig` (supports `hasMany`, `hasOne`, and `belongsTo`)
 - Relation filtering with dot-notation (generates efficient `EXISTS (...)` and `NOT EXISTS (...)` subqueries)
-- Rich criteria syntax: equality, NULL, IN lists, operators, LIKE search, deleted-mode
+- Rich criteria syntax: equality, NULL, IN lists, operators
 - Pagination and sorting with safe identifier validation
 - Transactions helper (`withTransaction`) and explicit transaction control
 - Supports custom IDs (disable auto-increment) and bulk inserts
@@ -109,12 +110,20 @@ __construct(
 |---|---|---|
 | Equality | `['status' => 'active']` | `status = ?` |
 | Null | `['deleted_at' => null]` | `deleted_at IS NULL` |
-| Null via operator | `['deleted_at' => ['=', null]]` | `deleted_at IS NULL` |
-| Not Null via operator | `['deleted_at' => ['!=', null]]` or `['deleted_at' => ['<>', null]]` | `deleted_at IS NOT NULL` |
 | IN (list) | `['id' => [1,2,3]]` | `id IN (?, ?, ?)` |
-| Operator | `['age' => ['>', 18]]` | `age > ?` |
-| Search | `['search' => ['name' => 'John', 'email' => 'example']]` | `name LIKE ? AND email LIKE ?` |
-| Deleted filter | `['deleted' => 'only']` or `['deleted' => 'with']` | Filter soft-deleted records |
+| Operator `=` | `['status' => ['=', 'active']]` | `status = ?` |
+| Operator `!=` | `['status' => ['!=', 'draft']]` | `status != ?` |
+| Operator `<>` | `['status' => ['<>', 'draft']]` | `status <> ?` |
+| Operator `<` | `['age' => ['<', 18]]` | `age < ?` |
+| Operator `>` | `['age' => ['>', 18]]` | `age > ?` |
+| Operator `<=` | `['age' => ['<=', 65]]` | `age <= ?` |
+| Operator `>=` | `['age' => ['>=', 18]]` | `age >= ?` |
+| Operator `LIKE` | `['name' => ['LIKE', '%john%']]` | `name LIKE ?` |
+| Operator `NOT LIKE` | `['name' => ['NOT LIKE', '%test%']]` | `name NOT LIKE ?` |
+| Operator `IN` | `['status' => ['IN', ['a', 'b']]]` | `status IN ?` |
+| Operator `NOT IN` | `['status' => ['NOT IN', ['x', 'y']]]` | `status NOT IN ?` |
+| Null via operator | `['deleted_at' => ['=', null]]` | `deleted_at IS NULL` |
+| Not Null via operator | `['deleted_at' => ['!=', null]]` | `deleted_at IS NOT NULL` |
 
 ### Relation Filters (Dot-notation)
 
@@ -233,7 +242,6 @@ class UserRepository extends BaseRepository
 
 | Method | Description |
 |---|---|
-| `['deleted' => 'with']` | Include soft-deleted records |
 | `restore(int\|string $id): int` | Restore soft-deleted record |
 | `forceDelete(int\|string $id): int` | Hard delete bypassing soft delete |
 | `forceDeleteBy(array $criteria): int` | Hard delete by criteria bypassing soft delete |
@@ -244,19 +252,15 @@ class UserRepository extends BaseRepository
 $users = $repo->findAll();                    // Only active records
 $repo->delete(1);                            // Soft delete (sets deleted_at)
 
-// Include soft-deleted records
-$allUsers = $repo->findBy(['deleted' => 'with']); // All including soft-deleted
-
 // Hard delete (physical removal)
 $repo->forceDelete(1);                       // Physical deletion
 
 // Restore soft-deleted records
 $repo->restore(1);                           // Sets deleted_at = NULL
 
-// API filtering
-$deleted = $repo->findBy(['deleted' => 'only']);     // Only soft-deleted
-$all = $repo->findBy(['deleted' => 'with']);         // All including soft-deleted
-$active = $repo->findBy(['deleted' => 'without']);   // Only active (default)
+// Filter by deleted_at column directly
+$deleted = $repo->findBy(['deleted_at' => ['!=', null]]);  // Only soft-deleted
+$active = $repo->findBy([]);                               // Only active (default)
 ```
 
 ## Custom ID Support
@@ -394,9 +398,8 @@ class PostRepository extends BaseRepository
 }
 
 // Usage
-$activePosts = $repo->with(['user'])->findAll();                    // Active posts with users
-$allPosts = $repo->with(['user'])->findBy(['deleted' => 'with']);   // All posts with users
-$deletedPosts = $repo->with(['user'])->findBy(['deleted' => 'only']); // Deleted posts with users
+$activePosts = $repo->with(['user'])->findAll();                                  // Active posts with users
+$deletedPosts = $repo->with(['user'])->findBy(['deleted_at' => ['!=', null]]);    // Deleted posts with users
 ```
 
 ### Transactions
@@ -419,11 +422,6 @@ $users = $repo->findBy(
     20,  // perPage
     1    // page
 );
-
-// Search queries (LIKE)
-$filtered = $repo->findBy([
-    'search' => ['name' => 'john', 'email' => 'example.com']
-]);
 
 // Transactions
 $repo->withTransaction(function (UserRepository $r) {

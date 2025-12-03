@@ -48,7 +48,7 @@ abstract class BaseRepository implements RepositoryInterface
         protected ?string $tableAlias = null,
         protected string $mapperMethod = 'fromArray'
     ) {
-        $this->criteriaBuilder = new CriteriaBuilder($this->getTableAlias(), $this->getDeletedAtColumn());
+        $this->criteriaBuilder = new CriteriaBuilder($this->getTableAlias());
         $this->modelMapper = new ModelMapper($this->modelClass, $this->mapperMethod);
         $this->queryFactory = new QueryFactory($this->connection, $this->table, $this->getTableAlias());
         $this->initializeServices();
@@ -69,14 +69,6 @@ abstract class BaseRepository implements RepositoryInterface
         if (!empty($this->relationConfig)) {
             $this->eagerLoadingService = new EagerLoadingService();
         }
-    }
-
-    /**
-     * @return QueryBuilder
-     */
-    protected function queryBuilder(): QueryBuilder
-    {
-        return $this->queryFactory->builder();
     }
 
     protected function table(): QueryBuilder
@@ -106,14 +98,6 @@ abstract class BaseRepository implements RepositoryInterface
     protected function getPrimaryKeyName(): string
     {
         return $this->primaryKey;
-    }
-
-    /**
-     * @return non-empty-string
-     */
-    protected function getDeletedAtColumn(): string
-    {
-        return $this->deletedAtColumn ?? 'deleted_at';
     }
 
     /**
@@ -273,20 +257,8 @@ abstract class BaseRepository implements RepositoryInterface
             $id = $data[$this->primaryKey];
         }
 
-        $model = $this->find($id);
-
-        if ($model === null) {
-            throw new \RuntimeException('Inserted record not found');
-        }
-
-        // Apply eager loading if enabled
-        if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-            $items = $this->eagerLoadingService->loadRelations([$model], [$this, 'loadEagerRelations']);
-            $this->eagerLoadingService->reset();
-            return $items[0];
-        }
-
-        return $model;
+        /** @var TModel */
+        return $this->find($id);
     }
 
     /**
@@ -311,21 +283,8 @@ abstract class BaseRepository implements RepositoryInterface
             throw new \RuntimeException('Updated record not found');
         }
 
-        // Apply eager loading if enabled
-        if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-            $items = $this->eagerLoadingService->loadRelations([$model], [$this, 'loadEagerRelations']);
-            $this->eagerLoadingService->reset();
-            return $items[0];
-        }
-
         return $model;
     }
-
-    /**
-     * @param array<string, mixed> $data
-     * @return TModel
-     * @throws \RuntimeException
-     */
 
     /**
      * @param array<string, mixed> $criteria
@@ -400,12 +359,7 @@ abstract class BaseRepository implements RepositoryInterface
         $qb = $this->applyCriteria($this->table(), $criteria)
             ->select('COUNT(*)');
 
-        /** @var int|string|false $value */
-        $value = $qb->executeQuery()->fetchOne();
-        if ($value === false) {
-            return 0;
-        }
-        return (int) $value;
+        return (int) $qb->executeQuery()->fetchOne();
     }
 
     public function sum(string $column, array $criteria = []): int|float
@@ -506,12 +460,6 @@ abstract class BaseRepository implements RepositoryInterface
         // Split incoming criteria into base-table criteria and relation criteria
         [$baseCriteria, $relationCriteria] = $this->extractRelationDotCriteria($criteria);
 
-        // Remove 'deleted' field from criteria if soft delete is not enabled
-        // to prevent CriteriaBuilder from trying to apply deleted_at conditions
-        if (!$this->softDeleteService && isset($baseCriteria['deleted'])) {
-            unset($baseCriteria['deleted']);
-        }
-
         // Apply base criteria via CriteriaBuilder (keeps existing behavior)
         $qb = $this->criteriaBuilder->applyCriteria($qb, $baseCriteria, $useAlias);
 
@@ -565,8 +513,6 @@ abstract class BaseRepository implements RepositoryInterface
         return [$baseCriteria, $relationCriteria];
     }
 
-
-
     /**
      * Compile relation metadata from relationConfig and repository graph.
      * @return array<string, array{type:string, foreignKey:string, relatedTable:string, relatedPrimaryKey:string}>
@@ -586,10 +532,6 @@ abstract class BaseRepository implements RepositoryInterface
             $relatedTable = $relatedRepo->getTableName();
             $relatedPrimaryKey = $relatedRepo->getPrimaryKeyName();
 
-            if (!is_string($relatedTable) || $relatedTable === '') {
-                continue;
-            }
-
             $result[$relation] = [
                 'type' => (string) $type,
                 'foreignKey' => (string) $foreignKey,
@@ -599,8 +541,6 @@ abstract class BaseRepository implements RepositoryInterface
         }
         return $result;
     }
-
-
 
     /**
      * @param array<string, 'ASC'|'DESC'> $orderBy
@@ -619,16 +559,12 @@ abstract class BaseRepository implements RepositoryInterface
         return $this->modelMapper->map($row);
     }
 
-
-
     protected function assertSafeIdentifier(string $identifier): void
     {
         if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
             throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
         }
     }
-
-
 
     // Soft delete methods
 

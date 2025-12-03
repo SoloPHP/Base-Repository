@@ -13,44 +13,10 @@ use Doctrine\DBAL\Query\QueryBuilder;
  */
 final readonly class RelationCriteriaApplier
 {
+    private const array ALLOWED_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
+
     public function __construct(private Connection $connection)
     {
-    }
-
-    /**
-     * Split criteria into base-table and relation (dot-notation) criteria.
-     *
-     * @param array<string, mixed> $criteria
-     * @param array<string, mixed> $relationConfig
-     * @return array{0: array<string, mixed>, 1: array<string, array<string, mixed>>}
-     */
-    public function splitCriteria(array $criteria, array $relationConfig): array
-    {
-        $baseCriteria = [];
-        $relationCriteria = [];
-
-        foreach ($criteria as $key => $value) {
-            if (str_contains($key, '.')) {
-                [$relation, $field] = explode('.', $key, 2);
-
-                // Check for NOT EXISTS prefix (!)
-                $isNotExists = false;
-                if (str_starts_with($relation, '!')) {
-                    $isNotExists = true;
-                    $relation = substr($relation, 1);
-                }
-
-                if ($field !== '' && isset($relationConfig[$relation])) {
-                    // Store with ! prefix if NOT EXISTS
-                    $relationKey = $isNotExists ? '!' . $relation : $relation;
-                    $relationCriteria[$relationKey][$field] = $value;
-                    continue;
-                }
-            }
-            $baseCriteria[$key] = $value;
-        }
-
-        return [$baseCriteria, $relationCriteria];
     }
 
     /**
@@ -122,12 +88,13 @@ final readonly class RelationCriteriaApplier
                     continue;
                 }
 
-                // Проверяем на оператор РАНЬШЕ, чем на список для IN
+                // Check for operator syntax [operator, value] before plain IN list
                 if (is_array($val) && array_key_exists(0, $val) && array_key_exists(1, $val) && is_string($val[0])) {
                     [$operator, $value] = $val;
                     $this->assertSafeOperator($operator);
+                    $upperOp = strtoupper($operator);
+
                     if ($value === null) {
-                        $upperOp = strtoupper($operator);
                         if ($upperOp === '=') {
                             $sub->andWhere("{$alias}.{$field} IS NULL");
                             continue;
@@ -138,12 +105,29 @@ final readonly class RelationCriteriaApplier
                         }
                     }
 
+                    // Handle IN and NOT IN operators
+                    if ($upperOp === 'IN' || $upperOp === 'NOT IN') {
+                        if (!is_array($value)) {
+                            $value = [$value];
+                        }
+                        if ($value === []) {
+                            $sub->andWhere($upperOp === 'IN' ? '1 = 0' : '1 = 1');
+                            continue;
+                        }
+                        $expr = $upperOp === 'IN'
+                            ? $sub->expr()->in("{$alias}.{$field}", ':' . $paramName)
+                            : $sub->expr()->notIn("{$alias}.{$field}", ':' . $paramName);
+                        $sub->andWhere($expr);
+                        $qb->setParameter($paramName, $value, $this->determineArrayParamType($value));
+                        continue;
+                    }
+
                     $sub->andWhere("{$alias}.{$field} {$operator} :{$paramName}");
                     $qb->setParameter($paramName, $value);
                     continue;
                 }
 
-                // Проверяем на список для IN ПОСЛЕ проверки на оператор
+                // Plain array treated as IN list
                 if (is_array($val) && array_is_list($val)) {
                     if ($val === []) {
                         $sub->andWhere('1 = 0');
@@ -178,8 +162,7 @@ final readonly class RelationCriteriaApplier
 
     private function assertSafeOperator(string $operator): void
     {
-        $allowedOperators = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
-        if (!in_array(strtoupper($operator), $allowedOperators, true)) {
+        if (!in_array(strtoupper($operator), self::ALLOWED_OPERATORS, true)) {
             throw new \InvalidArgumentException("Unsafe operator: {$operator}");
         }
     }

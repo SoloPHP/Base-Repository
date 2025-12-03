@@ -10,15 +10,15 @@ use Doctrine\DBAL\ArrayParameterType;
 /**
  * @internal
  */
-final class CriteriaBuilder
+final readonly class CriteriaBuilder
 {
+    private const array ALLOWED_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
+
     /**
      * @param non-empty-string $tableAlias
-     * @param non-empty-string $deletedAtColumn
      */
     public function __construct(
-        private string $tableAlias,
-        private string $deletedAtColumn = 'deleted_at'
+        private string $tableAlias
     ) {
     }
 
@@ -29,17 +29,6 @@ final class CriteriaBuilder
     public function applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true): QueryBuilder
     {
         foreach ($criteria as $field => $value) {
-            if ($field === 'search' && is_array($value)) {
-                $this->applySearchConditions($qb, $value);
-                continue;
-            }
-
-            if ($field === 'deleted') {
-                $mode = (is_string($value) && in_array($value, ['only','with','without'], true)) ? $value : null;
-                $this->applyDeletedCondition($qb, $mode, $useAlias);
-                continue;
-            }
-
             $this->assertSafeIdentifier($field);
             $quotedField = $useAlias ? "{$this->tableAlias}.{$field}" : $field;
 
@@ -48,7 +37,7 @@ final class CriteriaBuilder
                 continue;
             }
 
-            // Проверяем на оператор РАНЬШЕ, чем на список для IN
+            // Check for operator syntax [operator, value] before plain IN list
             if (
                 is_array($value)
                 && array_key_exists(0, $value)
@@ -57,8 +46,9 @@ final class CriteriaBuilder
             ) {
                 [$operator, $val] = $value;
                 $this->assertSafeOperator($operator);
+                $upperOp = strtoupper($operator);
+
                 if ($val === null) {
-                    $upperOp = strtoupper($operator);
                     if ($upperOp === '=') {
                         $qb->andWhere("{$quotedField} IS NULL");
                         continue;
@@ -69,19 +59,27 @@ final class CriteriaBuilder
                     }
                 }
 
+                if ($upperOp === 'IN' || $upperOp === 'NOT IN') {
+                    if (!is_array($val)) {
+                        $val = [$val];
+                    }
+                    $expr = $upperOp === 'IN'
+                        ? $qb->expr()->in($quotedField, ':' . $field)
+                        : $qb->expr()->notIn($quotedField, ':' . $field);
+                    $qb->andWhere($expr);
+                    $qb->setParameter($field, $val, $this->determineArrayParamType($val));
+                    continue;
+                }
+
                 $qb->andWhere("{$quotedField} {$operator} :{$field}");
                 $qb->setParameter($field, $val);
                 continue;
             }
 
-            // Проверяем на список для IN ПОСЛЕ проверки на оператор
+            // Plain array treated as IN list
             if (is_array($value) && array_is_list($value)) {
                 $qb->andWhere($qb->expr()->in($quotedField, ':' . $field));
-                $paramType = ArrayParameterType::STRING;
-                if (!empty($value) && is_int($value[0])) {
-                    $paramType = ArrayParameterType::INTEGER;
-                }
-                $qb->setParameter($field, $value, $paramType);
+                $qb->setParameter($field, $value, $this->determineArrayParamType($value));
                 continue;
             }
 
@@ -106,41 +104,6 @@ final class CriteriaBuilder
     }
 
     /**
-     * @param array<mixed, mixed> $search
-     */
-    private function applySearchConditions(QueryBuilder $qb, array $search): void
-    {
-        if ($search === []) {
-            return;
-        }
-
-        foreach ($search as $searchField => $searchValue) {
-            if ($searchValue !== null && $searchValue !== '') {
-                $this->assertSafeIdentifier($searchField);
-                $quotedField = "{$this->tableAlias}.{$searchField}";
-                $paramName = 'search_' . $searchField;
-                $qb->andWhere("{$quotedField} LIKE :{$paramName}");
-                $valueAsString = is_scalar($searchValue) ? (string) $searchValue : '';
-                $qb->setParameter($paramName, '%' . $valueAsString . '%');
-            }
-        }
-    }
-
-    /**
-     * @param 'only'|'with'|'without'|null $deletedMode
-     */
-    private function applyDeletedCondition(QueryBuilder $qb, ?string $deletedMode, bool $useAlias): void
-    {
-        $fullColumn = $useAlias ? "{$this->tableAlias}.{$this->deletedAtColumn}" : $this->deletedAtColumn;
-
-        if ($deletedMode === 'only') {
-            $qb->andWhere("{$fullColumn} IS NOT NULL");
-        } elseif ($deletedMode !== 'with') {
-            $qb->andWhere("{$fullColumn} IS NULL");
-        }
-    }
-
-    /**
      * @param string $identifier
      */
     private function assertSafeIdentifier(string $identifier): void
@@ -155,10 +118,18 @@ final class CriteriaBuilder
      */
     private function assertSafeOperator(string $operator): void
     {
-        $allowedOperators = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
-
-        if (!in_array(strtoupper($operator), $allowedOperators, true)) {
+        if (!in_array(strtoupper($operator), self::ALLOWED_OPERATORS, true)) {
             throw new \InvalidArgumentException("Unsafe operator: {$operator}");
         }
+    }
+
+    private function determineArrayParamType(array $values): ArrayParameterType
+    {
+        foreach ($values as $v) {
+            if (!is_int($v)) {
+                return ArrayParameterType::STRING;
+            }
+        }
+        return ArrayParameterType::INTEGER;
     }
 }

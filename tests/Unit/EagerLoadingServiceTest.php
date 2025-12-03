@@ -260,4 +260,404 @@ class EagerLoadingServiceTest extends TestCase
         $this->assertNotNull($item1->profile);
         $this->assertEquals(10, $item1->profile->id); // First match
     }
+
+    public function testLoadRelationWithHasMany(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+            public array $comments = [];
+
+            public function setComments(array $comments): void
+            {
+                $this->comments = $comments;
+            }
+        };
+
+        $item2 = new class {
+            public int $id = 2;
+            public array $comments = [];
+
+            public function setComments(array $comments): void
+            {
+                $this->comments = $comments;
+            }
+        };
+
+        $items = [$item1, $item2];
+
+        $comment1 = new \stdClass();
+        $comment1->id = 10;
+        $comment1->post_id = 1;
+
+        $comment2 = new \stdClass();
+        $comment2->id = 20;
+        $comment2->post_id = 1;
+
+        $comment3 = new \stdClass();
+        $comment3->id = 30;
+        $comment3->post_id = 2;
+
+        $mockRepo = new class {
+            public array $items = [];
+
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return $this->items;
+            }
+        };
+        $mockRepo->items = [$comment1, $comment2, $comment3];
+
+        $parentRepo = new \stdClass();
+        $parentRepo->commentRepository = $mockRepo;
+
+        $relationConfig = [
+            'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', []],
+        ];
+
+        $this->service->loadRelation($items, 'comments', $relationConfig, $parentRepo);
+
+        $this->assertCount(2, $item1->comments);
+        $this->assertCount(1, $item2->comments);
+        $this->assertEquals(10, $item1->comments[0]->id);
+        $this->assertEquals(20, $item1->comments[1]->id);
+        $this->assertEquals(30, $item2->comments[0]->id);
+    }
+
+    public function testLoadRelationWithHasManyWhenNoItems(): void
+    {
+        $items = [];
+
+        $mockRepo = new class {
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return [];
+            }
+        };
+
+        $parentRepo = new \stdClass();
+        $parentRepo->commentRepository = $mockRepo;
+
+        $relationConfig = [
+            'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', []],
+        ];
+
+        $this->service->loadRelation($items, 'comments', $relationConfig, $parentRepo);
+        $this->assertEmpty($items);
+    }
+
+    public function testLoadRelationWithHasManyWhenNoRelatedItems(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+            public array $comments = [];
+
+            public function setComments(array $comments): void
+            {
+                $this->comments = $comments;
+            }
+        };
+        $items = [$item1];
+
+        $mockRepo = new class {
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return [];
+            }
+        };
+
+        $parentRepo = new \stdClass();
+        $parentRepo->commentRepository = $mockRepo;
+
+        $relationConfig = [
+            'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', []],
+        ];
+
+        $this->service->loadRelation($items, 'comments', $relationConfig, $parentRepo);
+
+        $this->assertEmpty($item1->comments);
+    }
+
+    public function testLoadRelationWithBelongsTo(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+            public int $user_id = 100;
+            public ?object $user = null;
+
+            public function setUser(?object $user): void
+            {
+                $this->user = $user;
+            }
+        };
+
+        $item2 = new class {
+            public int $id = 2;
+            public int $user_id = 200;
+            public ?object $user = null;
+
+            public function setUser(?object $user): void
+            {
+                $this->user = $user;
+            }
+        };
+
+        $items = [$item1, $item2];
+
+        $user1 = new \stdClass();
+        $user1->id = 100;
+
+        $user2 = new \stdClass();
+        $user2->id = 200;
+
+        $mockRepo = new class {
+            public array $items = [];
+
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return $this->items;
+            }
+        };
+        $mockRepo->items = [$user1, $user2];
+
+        $parentRepo = new \stdClass();
+        $parentRepo->userRepository = $mockRepo;
+
+        $relationConfig = [
+            'user' => ['belongsTo', 'userRepository', 'user_id', 'setUser'],
+        ];
+
+        $this->service->loadRelation($items, 'user', $relationConfig, $parentRepo);
+
+        $this->assertNotNull($item1->user);
+        $this->assertNotNull($item2->user);
+        $this->assertEquals(100, $item1->user->id);
+        $this->assertEquals(200, $item2->user->id);
+    }
+
+    public function testLoadRelationWithBelongsToWhenNoRelatedItems(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+            public int $user_id = 100;
+            public ?object $user = null;
+
+            public function setUser(?object $user): void
+            {
+                $this->user = $user;
+            }
+        };
+        $items = [$item1];
+
+        $mockRepo = new class {
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return [];
+            }
+        };
+
+        $parentRepo = new \stdClass();
+        $parentRepo->userRepository = $mockRepo;
+
+        $relationConfig = [
+            'user' => ['belongsTo', 'userRepository', 'user_id', 'setUser'],
+        ];
+
+        $this->service->loadRelation($items, 'user', $relationConfig, $parentRepo);
+
+        $this->assertNull($item1->user);
+    }
+
+    public function testLoadRelationWithUnknownRelation(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+        };
+        $items = [$item1];
+
+        $parentRepo = new \stdClass();
+
+        $relationConfig = [];
+
+        // Should not throw any errors
+        $this->service->loadRelation($items, 'unknown', $relationConfig, $parentRepo);
+        $this->assertCount(1, $items);
+    }
+
+    public function testLoadRelationWithNestedRelations(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+            public array $comments = [];
+
+            public function setComments(array $comments): void
+            {
+                $this->comments = $comments;
+            }
+        };
+        $items = [$item1];
+
+        $comment1 = new \stdClass();
+        $comment1->id = 10;
+        $comment1->post_id = 1;
+
+        $mockRepo = new class {
+            public array $items = [];
+            public bool $withCalled = false;
+            public array $withRelations = [];
+
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return $this->items;
+            }
+
+            public function with(array $relations): self
+            {
+                $this->withCalled = true;
+                $this->withRelations = $relations;
+                return $this;
+            }
+        };
+        $mockRepo->items = [$comment1];
+
+        $parentRepo = new \stdClass();
+        $parentRepo->commentRepository = $mockRepo;
+
+        $relationConfig = [
+            'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', []],
+        ];
+
+        $this->service->loadRelation($items, 'comments', $relationConfig, $parentRepo, ['user']);
+
+        $this->assertTrue($mockRepo->withCalled);
+        $this->assertEquals(['user'], $mockRepo->withRelations);
+    }
+
+    public function testLoadRelationsReturnsEmptyItemsWhenEmpty(): void
+    {
+        $this->service->setRelations(['comments']);
+        $result = $this->service->loadRelations([], fn($items) => $items);
+        $this->assertEquals([], $result);
+    }
+
+    public function testGroupByTopLevelWithDotOnly(): void
+    {
+        $relations = ['.field'];
+        $grouped = $this->service->groupByTopLevel($relations);
+        $this->assertEquals([], $grouped);
+    }
+
+    public function testLoadRelationWithBelongsToWhenNoIds(): void
+    {
+        $item1 = new class {
+            public int $id = 1;
+            public ?int $user_id = null;
+            public ?object $user = null;
+
+            public function setUser(?object $user): void
+            {
+                $this->user = $user;
+            }
+        };
+        $items = [$item1];
+
+        $mockRepo = new class {
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                return [];
+            }
+        };
+
+        $parentRepo = new \stdClass();
+        $parentRepo->userRepository = $mockRepo;
+
+        $relationConfig = [
+            'user' => ['belongsTo', 'userRepository', 'user_id', 'setUser'],
+        ];
+
+        $this->service->loadRelation($items, 'user', $relationConfig, $parentRepo);
+
+        $this->assertNull($item1->user);
+    }
+
+    public function testGroupByTopLevelWithSingleRelation(): void
+    {
+        $relations = ['comments'];
+        $grouped = $this->service->groupByTopLevel($relations);
+
+        $this->assertArrayHasKey('comments', $grouped);
+        $this->assertEquals([], $grouped['comments']);
+    }
+
+    public function testLoadRelationWithHasOneWhenEmptyIds(): void
+    {
+        $item1 = new class {
+            public int $id = 0;
+            public ?object $profile = null;
+
+            public function setProfile(?object $profile): void
+            {
+                $this->profile = $profile;
+            }
+        };
+        $items = [$item1];
+
+        $findByCalled = false;
+        $mockRepo = new class {
+            public bool $findByCalled = false;
+
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                $this->findByCalled = true;
+                return [];
+            }
+        };
+
+        $parentRepo = new \stdClass();
+        $parentRepo->profileRepository = $mockRepo;
+
+        $relationConfig = [
+            'profile' => ['hasOne', 'profileRepository', 'user_id', 'setProfile', []],
+        ];
+
+        $this->service->loadRelation($items, 'profile', $relationConfig, $parentRepo);
+
+        // With id=0, IDs array will not be empty, so findBy should be called
+        $this->assertTrue($mockRepo->findByCalled);
+    }
+
+    public function testLoadRelationWithHasManyEmptyItems(): void
+    {
+        $item1 = new class {
+            public int $id = 0;
+            public array $comments = [];
+
+            public function setComments(array $comments): void
+            {
+                $this->comments = $comments;
+            }
+        };
+        $items = [$item1];
+
+        $mockRepo = new class {
+            public bool $findByCalled = false;
+
+            public function findBy(array $criteria, ?array $sort = null): array
+            {
+                $this->findByCalled = true;
+                return [];
+            }
+        };
+
+        $parentRepo = new \stdClass();
+        $parentRepo->commentRepository = $mockRepo;
+
+        $relationConfig = [
+            'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', []],
+        ];
+
+        $this->service->loadRelation($items, 'comments', $relationConfig, $parentRepo);
+
+        // With id=0, IDs array will not be empty, so findBy should be called
+        $this->assertTrue($mockRepo->findByCalled);
+    }
 }
