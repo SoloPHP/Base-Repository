@@ -261,6 +261,7 @@ $repo->restore(1);                           // Sets deleted_at = NULL
 // Filter by deleted_at column directly
 $deleted = $repo->findBy(['deleted_at' => ['!=', null]]);  // Only soft-deleted
 $active = $repo->findBy([]);                               // Only active (default)
+$all = $repo->findBy(['deleted_at' => '*']);               // All records (including deleted)
 ```
 
 ## Custom ID Support
@@ -400,6 +401,7 @@ class PostRepository extends BaseRepository
 // Usage
 $activePosts = $repo->with(['user'])->findAll();                                  // Active posts with users
 $deletedPosts = $repo->with(['user'])->findBy(['deleted_at' => ['!=', null]]);    // Deleted posts with users
+$allPosts = $repo->with(['user'])->findBy(['deleted_at' => '*']);                 // All posts with users
 ```
 
 ### Transactions
