@@ -13,10 +13,16 @@ final readonly class SoftDeleteService
 
     /**
      * Apply soft delete criteria to existing criteria array
+     *
+     * Special value '*' means "show all" (no filter applied)
      */
     public function applyCriteria(array $criteria): array
     {
         if (isset($criteria[$this->deletedAtColumn])) {
+            // '*' means show all - remove the key entirely
+            if ($criteria[$this->deletedAtColumn] === '*') {
+                unset($criteria[$this->deletedAtColumn]);
+            }
             return $criteria;
         }
 

@@ -64,4 +64,15 @@ class SoftDeleteServiceTest extends TestCase
         $criteria = $service->applyCriteria([]);
         $this->assertArrayHasKey('removed_at', $criteria);
     }
+
+    public function testApplyCriteriaWithWildcardShowsAll(): void
+    {
+        $service = new SoftDeleteService('deleted_at');
+
+        $criteria = ['deleted_at' => '*', 'status' => 'active'];
+        $result = $service->applyCriteria($criteria);
+
+        $this->assertArrayNotHasKey('deleted_at', $result);
+        $this->assertEquals('active', $result['status']);
+    }
 }
