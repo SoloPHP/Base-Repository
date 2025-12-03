@@ -71,6 +71,11 @@ abstract class BaseRepository implements RepositoryInterface
         }
     }
 
+    protected function queryBuilder(): QueryBuilder
+    {
+        return $this->queryFactory->builder();
+    }
+
     protected function table(): QueryBuilder
     {
         return $this->queryFactory->tableSelectAll();

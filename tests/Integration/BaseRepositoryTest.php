@@ -340,6 +340,16 @@ class BaseRepositoryTest extends TestCase
 
         $this->assertEquals(0, $affected);
     }
+
+    public function testQueryBuilderAccess(): void
+    {
+        $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com']);
+        $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com']);
+
+        $count = $this->repository->countWithCustomQuery();
+
+        $this->assertEquals(2, $count);
+    }
 }
 
 // Test model
@@ -372,6 +382,15 @@ class TestUserRepository extends BaseRepository
     public function __construct(\Doctrine\DBAL\Connection $connection)
     {
         parent::__construct($connection, TestUser::class, 'users');
+    }
+
+    public function countWithCustomQuery(): int
+    {
+        return (int) $this->queryBuilder()
+            ->select('COUNT(*)')
+            ->from('users')
+            ->executeQuery()
+            ->fetchOne();
     }
 }
 
