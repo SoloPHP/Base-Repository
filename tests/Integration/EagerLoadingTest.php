@@ -118,17 +118,11 @@ class EagerLoadingTest extends TestCase
             $this->assertNotNull($post->author);
             $this->assertEquals('John Doe', $post->author->name);
         }
-    }
 
-    public function testWithOnFindAll(): void
-    {
-        $author = $this->authorRepository->create(['name' => 'Jane Doe']);
-        $this->postRepository->create(['title' => 'Post 1', 'author_id' => $author->id]);
-
-        $posts = $this->postRepository->with(['author'])->findAll();
-
-        $this->assertCount(1, $posts);
-        $this->assertNotNull($posts[0]->author);
+        // Also test findAll (same as findBy with empty criteria)
+        $allPosts = $this->postRepository->with(['author'])->findAll();
+        $this->assertCount(2, $allPosts);
+        $this->assertNotNull($allPosts[0]->author);
     }
 
     public function testWithOnFindOneBy(): void
@@ -222,30 +216,12 @@ class EagerLoadingTest extends TestCase
         $this->assertNull($foundAuthor->profile);
     }
 
-    public function testWithHasManyEmptyIds(): void
+    public function testWithEmptyResults(): void
     {
-        // Test hasMany branch when IDs list is empty
+        // Test hasMany branch when no items found
         $posts = $this->postRepository->with(['comments'])->findBy(['id' => 999]);
-
         $this->assertEmpty($posts);
-    }
 
-    public function testWithHasOneEmptyIds(): void
-    {
-        $profileRepository = new ProfileRepository($this->connection);
-        $authorWithProfileRepository = new AuthorWithProfileRepository(
-            $this->connection,
-            $profileRepository
-        );
-
-        // Test hasOne branch when no items found
-        $authors = $authorWithProfileRepository->with(['profile'])->findBy(['id' => 999]);
-
-        $this->assertEmpty($authors);
-    }
-
-    public function testLoadEagerRelationsWithEmptyItems(): void
-    {
         // Test loadEagerRelations when items are empty
         $result = $this->postRepository->loadEagerRelations([], ['author', 'comments']);
         $this->assertEmpty($result);

@@ -196,6 +196,51 @@ class BelongsToManyTest extends TestCase
         $this->assertEquals('alpha', $foundArticle->tags[0]->name);
         $this->assertEquals('zebra', $foundArticle->tags[1]->name);
     }
+
+    public function testWithBelongsToManyWithStringPrimaryKey(): void
+    {
+        // Create tables with string primary keys
+        $this->connection->executeStatement('
+            CREATE TABLE articles_uuid (
+                id VARCHAR(36) PRIMARY KEY,
+                title VARCHAR(255) NOT NULL
+            )
+        ');
+
+        $this->connection->executeStatement('
+            CREATE TABLE categories_uuid (
+                id VARCHAR(36) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL
+            )
+        ');
+
+        $this->connection->executeStatement('
+            CREATE TABLE article_category (
+                article_id VARCHAR(36) NOT NULL,
+                category_id VARCHAR(36) NOT NULL,
+                PRIMARY KEY (article_id, category_id)
+            )
+        ');
+
+        $categoryRepo = new CategoryUuidRepository($this->connection);
+        $articleRepo = new ArticleUuidRepository($this->connection, $categoryRepo);
+
+        // Create records with UUID-like string IDs
+        $articleId = 'art-' . uniqid();
+        $cat1Id = 'cat-' . uniqid();
+        $cat2Id = 'cat-' . uniqid();
+
+        $this->connection->insert('articles_uuid', ['id' => $articleId, 'title' => 'UUID Article']);
+        $this->connection->insert('categories_uuid', ['id' => $cat1Id, 'name' => 'Tech']);
+        $this->connection->insert('categories_uuid', ['id' => $cat2Id, 'name' => 'Science']);
+        $this->connection->insert('article_category', ['article_id' => $articleId, 'category_id' => $cat1Id]);
+        $this->connection->insert('article_category', ['article_id' => $articleId, 'category_id' => $cat2Id]);
+
+        $foundArticle = $articleRepo->with(['categories'])->find($articleId);
+
+        $this->assertNotNull($foundArticle);
+        $this->assertCount(2, $foundArticle->categories);
+    }
 }
 
 // Models
@@ -297,5 +342,76 @@ class ArticleWithTagsSortedRepository extends BaseRepository
             ),
         ];
         parent::__construct($connection, ArticleModel::class, 'articles_m2m');
+    }
+}
+
+// UUID Models and Repositories for string primary key test
+class ArticleUuidModel
+{
+    public array $categories = [];
+
+    public function __construct(
+        public string $id,
+        public string $title
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self($data['id'], $data['title']);
+    }
+
+    public function setCategories(array $categories): void
+    {
+        $this->categories = $categories;
+    }
+}
+
+class CategoryUuidModel
+{
+    public function __construct(
+        public string $id,
+        public string $name
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self($data['id'], $data['name']);
+    }
+}
+
+class CategoryUuidRepository extends BaseRepository
+{
+    protected bool $useAutoIncrement = false;
+
+    public function __construct(\Doctrine\DBAL\Connection $connection)
+    {
+        parent::__construct($connection, CategoryUuidModel::class, 'categories_uuid');
+    }
+}
+
+class ArticleUuidRepository extends BaseRepository
+{
+    protected bool $useAutoIncrement = false;
+    protected array $relationConfig = [];
+
+    public CategoryUuidRepository $categoryRepository;
+
+    public function __construct(
+        \Doctrine\DBAL\Connection $connection,
+        CategoryUuidRepository $categoryRepository
+    ) {
+        $this->categoryRepository = $categoryRepository;
+        $this->relationConfig = [
+            'categories' => new BelongsToMany(
+                repository: 'categoryRepository',
+                pivot: 'article_category',
+                foreignPivotKey: 'article_id',
+                relatedPivotKey: 'category_id',
+                setter: 'setCategories',
+            ),
+        ];
+        parent::__construct($connection, ArticleUuidModel::class, 'articles_uuid');
     }
 }

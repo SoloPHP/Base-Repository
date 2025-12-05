@@ -31,28 +31,22 @@ class ErrorHandlingTest extends TestCase
         $this->repository = new SimpleItemRepository($this->connection);
     }
 
-    public function testUnsafeIdentifierInCriteriaThrowsException(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('unsafeIdentifierProvider')]
+    public function testUnsafeIdentifierThrowsException(string $identifier): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Unsafe identifier');
 
-        $this->repository->findBy(['1=1; DROP TABLE items; --' => 'test']);
+        $this->repository->findBy([$identifier => 'test']);
     }
 
-    public function testUnsafeIdentifierWithSpaceThrowsException(): void
+    public static function unsafeIdentifierProvider(): array
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsafe identifier');
-
-        $this->repository->findBy(['field name' => 'test']);
-    }
-
-    public function testUnsafeIdentifierWithQuoteThrowsException(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsafe identifier');
-
-        $this->repository->findBy(["field'name" => 'test']);
+        return [
+            'sql injection' => ['1=1; DROP TABLE items; --'],
+            'space in name' => ['field name'],
+            'quote in name' => ["field'name"],
+        ];
     }
 
     public function testUnsafeOperatorThrowsException(): void
@@ -71,27 +65,17 @@ class ErrorHandlingTest extends TestCase
         $this->repository->update(999, ['name' => 'Updated']);
     }
 
-    public function testDeleteNonExistentRecordReturnsZero(): void
+    public function testNonExistentRecordHandling(): void
     {
-        $affected = $this->repository->delete(999);
+        // Delete returns zero
+        $this->assertEquals(0, $this->repository->delete(999));
 
-        $this->assertEquals(0, $affected);
-    }
+        // Find returns null
+        $this->assertNull($this->repository->find(999));
 
-    public function testFindNonExistentRecordReturnsNull(): void
-    {
-        $result = $this->repository->find(999);
-
-        $this->assertNull($result);
-    }
-
-    public function testFindOneByNonMatchingCriteriaReturnsNull(): void
-    {
+        // FindOneBy returns null for non-matching criteria
         $this->repository->create(['name' => 'Test', 'price' => 10.00]);
-
-        $result = $this->repository->findOneBy(['name' => 'NonExistent']);
-
-        $this->assertNull($result);
+        $this->assertNull($this->repository->findOneBy(['name' => 'NonExistent']));
     }
 
     public function testValidIdentifiersWork(): void
@@ -106,20 +90,21 @@ class ErrorHandlingTest extends TestCase
         $this->assertCount(1, $items);
     }
 
-    public function testUnsafeIdentifierInOrderByThrowsException(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('unsafeIdentifierContextProvider')]
+    public function testUnsafeIdentifierInContextThrowsException(string $context, callable $action): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Unsafe identifier');
 
-        $this->repository->findBy([], ['invalid; DROP TABLE' => 'ASC']);
+        $action($this->repository);
     }
 
-    public function testUnsafeIdentifierInAggregateThrowsException(): void
+    public static function unsafeIdentifierContextProvider(): array
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsafe identifier');
-
-        $this->repository->sum('invalid; DROP TABLE');
+        return [
+            'orderBy' => ['orderBy', fn($repo) => $repo->findBy([], ['invalid; DROP TABLE' => 'ASC'])],
+            'aggregate' => ['aggregate', fn($repo) => $repo->sum('invalid; DROP TABLE')],
+        ];
     }
 }
 

@@ -67,53 +67,45 @@ class RelationCriteriaApplierTest extends TestCase
         $this->assertEquals($initialSql, $qb->getSQL());
     }
 
-    public function testApplyWithNullValue(): void
+    public function testApplyWithNullHandling(): void
     {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => null]]);
-        $this->assertStringContainsString('IS NULL', $qb->getSQL());
+        // Direct null value
+        $qb1 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb1, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => null]]);
+        $this->assertStringContainsString('IS NULL', $qb1->getSQL());
+
+        // Explicit = null operator
+        $qb2 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb2, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['=', null]]]);
+        $this->assertStringContainsString('IS NULL', $qb2->getSQL());
+
+        // != null operator
+        $qb3 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb3, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['!=', null]]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb3->getSQL());
+
+        // <> null operator
+        $qb4 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb4, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['<>', null]]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb4->getSQL());
     }
 
-    public function testApplyWithIsNullOperator(): void
+    public function testApplyWithEmptyArrayHandling(): void
     {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['=', null]]]);
-        $this->assertStringContainsString('IS NULL', $qb->getSQL());
-    }
+        // Empty array defaults to IN with empty
+        $qb1 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb1, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => []]]);
+        $this->assertStringContainsString('1 = 0', $qb1->getSQL());
 
-    public function testApplyWithIsNotNullOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['!=', null]]]);
-        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
-    }
+        // Explicit empty IN
+        $qb2 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb2, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['IN', []]]]);
+        $this->assertStringContainsString('1 = 0', $qb2->getSQL());
 
-    public function testApplyWithNotEqualNullOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['<>', null]]]);
-        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
-    }
-
-    public function testApplyWithEmptyInList(): void
-    {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => []]]);
-        $this->assertStringContainsString('1 = 0', $qb->getSQL());
-    }
-
-    public function testApplyWithEmptyInOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['IN', []]]]);
-        $this->assertStringContainsString('1 = 0', $qb->getSQL());
-    }
-
-    public function testApplyWithEmptyNotInOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
-        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['NOT IN', []]]]);
-        $this->assertStringContainsString('1 = 1', $qb->getSQL());
+        // Empty NOT IN
+        $qb3 = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb3, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['NOT IN', []]]]);
+        $this->assertStringContainsString('1 = 1', $qb3->getSQL());
     }
 
     public function testApplyWithInOperatorSingleValue(): void

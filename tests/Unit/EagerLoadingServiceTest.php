@@ -20,6 +20,10 @@ class EagerLoadingServiceTest extends TestCase
 
     public function testGetRelations(): void
     {
+        // Test default empty state
+        $this->assertEquals([], $this->service->getRelations());
+
+        // Test after setting relations
         $this->service->setRelations(['comments', 'user']);
         $this->assertEquals(['comments', 'user'], $this->service->getRelations());
     }
@@ -50,10 +54,14 @@ class EagerLoadingServiceTest extends TestCase
             public bool $withCalled = false;
             public function findBy(array $c, ?array $s = null): array { return $this->items; }
             public function with(array $r): self { $this->withCalled = true; return $this; }
+            public function getPrimaryKeyName(): string { return 'id'; }
         };
         $mockRepo->items = [$comment];
 
-        $parentRepo = new \stdClass();
+        $parentRepo = new class {
+            public object $commentRepository;
+            public function getPrimaryKeyName(): string { return 'id'; }
+        };
         $parentRepo->commentRepository = $mockRepo;
 
         $relationConfig = [
@@ -95,9 +103,13 @@ class EagerLoadingServiceTest extends TestCase
 
         $mockRepo = new class {
             public function findBy(array $c, ?array $s = null): array { return []; }
+            public function getPrimaryKeyName(): string { return 'id'; }
         };
 
-        $parentRepo = new \stdClass();
+        $parentRepo = new class {
+            public object $userRepository;
+            public function getPrimaryKeyName(): string { return 'id'; }
+        };
         $parentRepo->userRepository = $mockRepo;
 
         $relationConfig = [

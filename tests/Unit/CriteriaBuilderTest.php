@@ -58,18 +58,17 @@ class CriteriaBuilderTest extends TestCase
         $this->assertStringContainsString('IS NULL', $qb->getSQL());
     }
 
-    public function testApplyCriteriaWithNotNullOperator(): void
+    public function testApplyCriteriaWithNotNullOperators(): void
     {
-        $qb = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb, ['deleted_at' => ['!=', null]]);
-        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
-    }
+        // Test != null
+        $qb1 = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb1, ['deleted_at' => ['!=', null]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb1->getSQL());
 
-    public function testApplyCriteriaWithNotEqualNullOperator(): void
-    {
-        $qb = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb, ['deleted_at' => ['<>', null]]);
-        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
+        // Test <> null
+        $qb2 = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb2, ['deleted_at' => ['<>', null]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb2->getSQL());
     }
 
     public function testApplyCriteriaWithInOperatorSingleValue(): void

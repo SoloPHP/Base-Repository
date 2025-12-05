@@ -70,11 +70,17 @@ abstract class BaseRepository implements RepositoryInterface
         if ($this->deletedAtColumn !== null) {
             $this->softDeleteService = new SoftDeleteService($this->deletedAtColumn);
         }
+    }
 
-        // Initialize eager loading service if relations are configured
-        if (!empty($this->relationConfig)) {
+    /**
+     * Get or create EagerLoadingService (lazy initialization)
+     */
+    private function getEagerLoadingService(): EagerLoadingService
+    {
+        if ($this->eagerLoadingService === null) {
             $this->eagerLoadingService = new EagerLoadingService();
         }
+        return $this->eagerLoadingService;
     }
 
     protected function queryBuilder(): QueryBuilder
@@ -654,8 +660,8 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function with(array $relations): static
     {
-        if ($this->eagerLoadingService) {
-            $this->eagerLoadingService->setRelations($relations);
+        if (!empty($this->relationConfig)) {
+            $this->getEagerLoadingService()->setRelations($relations);
         }
         return $this;
     }
@@ -669,11 +675,13 @@ abstract class BaseRepository implements RepositoryInterface
             return $items;
         }
 
+        $service = $this->getEagerLoadingService();
+
         // Support nested relations via dot-notation using top-level grouping
-        $grouped = $this->eagerLoadingService->groupByTopLevel($relations);
+        $grouped = $service->groupByTopLevel($relations);
 
         foreach ($grouped as $relation => $nested) {
-            $this->eagerLoadingService->loadRelation($items, $relation, $this->relationConfig, $this, $nested);
+            $service->loadRelation($items, $relation, $this->relationConfig, $this, $nested);
         }
 
         return $items;

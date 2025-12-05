@@ -76,6 +76,8 @@ final class EagerLoadingService
         }
 
         $relatedRepository = $repository->{$config->getRepository()};
+        $parentPrimaryKey = $repository->getPrimaryKeyName();
+        $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
 
         // If nested relations are requested, configure them on the related repository
         if (!empty($nested) && method_exists($relatedRepository, 'with')) {
@@ -86,7 +88,7 @@ final class EagerLoadingService
         $orderBy = $config->getOrderBy();
 
         if ($config instanceof BelongsToMany) {
-            $ids = $this->pluckIds($items);
+            $ids = $this->pluckIds($items, $parentPrimaryKey);
             if (!empty($ids)) {
                 $this->loadBelongsToMany(
                     $items,
@@ -97,23 +99,24 @@ final class EagerLoadingService
                     $config->foreignPivotKey,
                     $config->relatedPivotKey,
                     $setter,
-                    $orderBy
+                    $orderBy,
+                    $parentPrimaryKey
                 );
             }
         } elseif ($config instanceof BelongsTo) {
             $ids = $this->pluckUnique($items, $config->foreignKey);
             if (!empty($ids)) {
-                $related = $relatedRepository->findBy(['id' => $ids]);
-                $this->joinBelongsTo($items, $related, $config->foreignKey, $setter);
+                $related = $relatedRepository->findBy([$relatedPrimaryKey => $ids]);
+                $this->joinBelongsTo($items, $related, $config->foreignKey, $setter, $relatedPrimaryKey);
             }
         } elseif ($config instanceof HasMany) {
-            $ids = $this->pluckIds($items);
+            $ids = $this->pluckIds($items, $parentPrimaryKey);
             $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
-            $this->joinHasMany($items, $related, $config->foreignKey, $setter);
+            $this->joinHasMany($items, $related, $config->foreignKey, $setter, $parentPrimaryKey);
         } elseif ($config instanceof HasOne) {
-            $ids = $this->pluckIds($items);
+            $ids = $this->pluckIds($items, $parentPrimaryKey);
             $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
-            $this->joinHasOne($items, $related, $config->foreignKey, $setter);
+            $this->joinHasOne($items, $related, $config->foreignKey, $setter, $parentPrimaryKey);
         }
     }
 
@@ -129,11 +132,17 @@ final class EagerLoadingService
         string $foreignPivotKey,
         string $relatedPivotKey,
         string $setter,
-        array $sort
+        array $sort,
+        string $parentPrimaryKey
     ): void {
         $connection = $parentRepository->getConnection();
         $relatedTable = $relatedRepository->getTableName();
         $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
+
+        // Determine parameter type based on ID type
+        $paramType = !empty($parentIds) && is_int($parentIds[0])
+            ? \Doctrine\DBAL\ArrayParameterType::INTEGER
+            : \Doctrine\DBAL\ArrayParameterType::STRING;
 
         // Single JOIN query: pivot + related table
         $qb = $connection->createQueryBuilder()
@@ -141,7 +150,7 @@ final class EagerLoadingService
             ->from($pivotTable, 'p')
             ->innerJoin('p', $relatedTable, 'r', "r.{$relatedPrimaryKey} = p.{$relatedPivotKey}")
             ->where("p.{$foreignPivotKey} IN (:ids)")
-            ->setParameter('ids', $parentIds, \Doctrine\DBAL\ArrayParameterType::INTEGER);
+            ->setParameter('ids', $parentIds, $paramType);
 
         // Apply sorting
         foreach ($sort as $column => $direction) {
@@ -167,7 +176,7 @@ final class EagerLoadingService
 
         // Set relations on each item
         foreach ($items as $item) {
-            $item->{$setter}($grouped[$item->id] ?? []);
+            $item->{$setter}($grouped[$item->{$parentPrimaryKey}] ?? []);
         }
     }
 
@@ -207,16 +216,21 @@ final class EagerLoadingService
     /**
      * Join belongs-to relations
      */
-    private function joinBelongsTo(array $items, array $related, string $foreignKey, string $setter): void
-    {
+    private function joinBelongsTo(
+        array $items,
+        array $related,
+        string $foreignKey,
+        string $setter,
+        string $relatedPrimaryKey
+    ): void {
         if (empty($items) || empty($related)) {
             return;
         }
 
-        // Map related items by key
+        // Map related items by their primary key
         $relatedMap = [];
         foreach ($related as $item) {
-            $relatedMap[$item->id] = $item;
+            $relatedMap[$item->{$relatedPrimaryKey}] = $item;
         }
 
         // Set relations
@@ -230,8 +244,13 @@ final class EagerLoadingService
     /**
      * Join has-many relations
      */
-    private function joinHasMany(array $items, array $related, string $foreignKey, string $setter): void
-    {
+    private function joinHasMany(
+        array $items,
+        array $related,
+        string $foreignKey,
+        string $setter,
+        string $parentPrimaryKey
+    ): void {
         // Group related items by foreign key
         $relatedMap = [];
         foreach ($related as $item) {
@@ -240,15 +259,20 @@ final class EagerLoadingService
 
         // Set relations
         foreach ($items as $item) {
-            $item->{$setter}($relatedMap[$item->id] ?? []);
+            $item->{$setter}($relatedMap[$item->{$parentPrimaryKey}] ?? []);
         }
     }
 
     /**
      * Join has-one relations
      */
-    private function joinHasOne(array $items, array $related, string $foreignKey, string $setter): void
-    {
+    private function joinHasOne(
+        array $items,
+        array $related,
+        string $foreignKey,
+        string $setter,
+        string $parentPrimaryKey
+    ): void {
         // Map related items by foreign key (taking first match for each foreign key)
         $relatedMap = [];
         foreach ($related as $item) {
@@ -259,7 +283,7 @@ final class EagerLoadingService
 
         // Set relations
         foreach ($items as $item) {
-            $item->{$setter}($relatedMap[$item->id] ?? null);
+            $item->{$setter}($relatedMap[$item->{$parentPrimaryKey}] ?? null);
         }
     }
 
@@ -275,10 +299,10 @@ final class EagerLoadingService
     }
 
     /**
-     * Extract IDs from items array
+     * Extract primary key values from items array
      */
-    private function pluckIds(array $items): array
+    private function pluckIds(array $items, string $primaryKey): array
     {
-        return array_column($items, 'id');
+        return array_column($items, $primaryKey);
     }
 }
