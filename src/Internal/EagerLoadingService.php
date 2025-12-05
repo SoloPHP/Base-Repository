@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Internal;
 
+use Solo\BaseRepository\Relation\RelationType;
+use Solo\BaseRepository\Relation\BelongsTo;
+use Solo\BaseRepository\Relation\BelongsToMany;
+use Solo\BaseRepository\Relation\HasMany;
+use Solo\BaseRepository\Relation\HasOne;
+
 final class EagerLoadingService
 {
     private array $eagerLoad = [];
@@ -54,6 +60,8 @@ final class EagerLoadingService
 
     /**
      * Load a specific relation
+     *
+     * @param array<string, RelationType> $relationConfig
      */
     public function loadRelation(
         array $items,
@@ -63,38 +71,103 @@ final class EagerLoadingService
         array $nested = []
     ): void {
         $config = $relationConfig[$relation] ?? null;
-        if (!$config) {
+        if (!$config instanceof RelationType) {
             return;
         }
 
-        $type = $config[0];
-        $repositoryProperty = $config[1];
-        $foreignKey = $config[2];
-        $setter = $config[3];
-        $sort = $config[4] ?? [];
-
-        $relatedRepository = $repository->{$repositoryProperty};
+        $relatedRepository = $repository->{$config->getRepository()};
 
         // If nested relations are requested, configure them on the related repository
         if (!empty($nested) && method_exists($relatedRepository, 'with')) {
-            // Nested parts (e.g. ["attribute", "attribute.translations"]) are relative to the related repository
             $relatedRepository->with($nested);
         }
 
-        if ($type === 'belongsTo') {
-            $ids = $this->pluckUnique($items, $foreignKey);
+        $setter = $config->getSetter();
+        $orderBy = $config->getOrderBy();
+
+        if ($config instanceof BelongsToMany) {
+            $ids = $this->pluckIds($items);
+            if (!empty($ids)) {
+                $this->loadBelongsToMany(
+                    $items,
+                    $ids,
+                    $relatedRepository,
+                    $repository,
+                    $config->pivot,
+                    $config->foreignPivotKey,
+                    $config->relatedPivotKey,
+                    $setter,
+                    $orderBy
+                );
+            }
+        } elseif ($config instanceof BelongsTo) {
+            $ids = $this->pluckUnique($items, $config->foreignKey);
             if (!empty($ids)) {
                 $related = $relatedRepository->findBy(['id' => $ids]);
-                $this->joinBelongsTo($items, $related, $foreignKey, $setter);
+                $this->joinBelongsTo($items, $related, $config->foreignKey, $setter);
             }
-        } elseif ($type === 'hasMany') {
+        } elseif ($config instanceof HasMany) {
             $ids = $this->pluckIds($items);
-            $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
-            $this->joinHasMany($items, $related, $foreignKey, $setter);
-        } elseif ($type === 'hasOne') {
+            $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
+            $this->joinHasMany($items, $related, $config->foreignKey, $setter);
+        } elseif ($config instanceof HasOne) {
             $ids = $this->pluckIds($items);
-            $related = $relatedRepository->findBy([$foreignKey => $ids], $sort);
-            $this->joinHasOne($items, $related, $foreignKey, $setter);
+            $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
+            $this->joinHasOne($items, $related, $config->foreignKey, $setter);
+        }
+    }
+
+    /**
+     * Load belongsToMany relations via pivot table using single JOIN query
+     */
+    private function loadBelongsToMany(
+        array $items,
+        array $parentIds,
+        object $relatedRepository,
+        object $parentRepository,
+        string $pivotTable,
+        string $foreignPivotKey,
+        string $relatedPivotKey,
+        string $setter,
+        array $sort
+    ): void {
+        $connection = $parentRepository->getConnection();
+        $relatedTable = $relatedRepository->getTableName();
+        $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
+
+        // Single JOIN query: pivot + related table
+        $qb = $connection->createQueryBuilder()
+            ->select("p.{$foreignPivotKey}", 'r.*')
+            ->from($pivotTable, 'p')
+            ->innerJoin('p', $relatedTable, 'r', "r.{$relatedPrimaryKey} = p.{$relatedPivotKey}")
+            ->where("p.{$foreignPivotKey} IN (:ids)")
+            ->setParameter('ids', $parentIds, \Doctrine\DBAL\ArrayParameterType::INTEGER);
+
+        // Apply sorting
+        foreach ($sort as $column => $direction) {
+            $qb->addOrderBy("r.{$column}", $direction);
+        }
+
+        $rows = $qb->executeQuery()->fetchAllAssociative();
+
+        if (empty($rows)) {
+            foreach ($items as $item) {
+                $item->{$setter}([]);
+            }
+            return;
+        }
+
+        // Group by parent ID and map to models
+        $grouped = [];
+        foreach ($rows as $row) {
+            $parentId = $row[$foreignPivotKey];
+            unset($row[$foreignPivotKey]);
+            $grouped[$parentId][] = $relatedRepository->mapToModel($row);
+        }
+
+        // Set relations on each item
+        foreach ($items as $item) {
+            $item->{$setter}($grouped[$item->id] ?? []);
         }
     }
 

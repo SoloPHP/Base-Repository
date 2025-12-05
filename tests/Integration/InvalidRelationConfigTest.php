@@ -7,6 +7,7 @@ namespace Solo\BaseRepository\Tests\Integration;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 use Solo\BaseRepository\BaseRepository;
+use Solo\BaseRepository\Relation\HasMany;
 
 class InvalidRelationConfigTest extends TestCase
 {
@@ -27,12 +28,12 @@ class InvalidRelationConfigTest extends TestCase
         ');
     }
 
-    public function testInvalidRelationConfigWithTooFewElements(): void
+    public function testInvalidRelationConfigWithNonDtoValue(): void
     {
         $repository = new InvalidConfigRepository1($this->connection);
         $item = $repository->create(['name' => 'Test']);
 
-        // Should not throw, just skip invalid config
+        // Should not throw, just skip invalid config (non-DTO value)
         $items = $repository->findBy(['name' => 'Test']);
         $this->assertCount(1, $items);
     }
@@ -42,7 +43,7 @@ class InvalidRelationConfigTest extends TestCase
         $repository = new InvalidConfigRepository2($this->connection);
         $item = $repository->create(['name' => 'Test']);
 
-        // Should not throw, just skip invalid config
+        // Should not throw, just skip invalid config (missing repository property)
         $items = $repository->findBy(['name' => 'Test']);
         $this->assertCount(1, $items);
     }
@@ -83,11 +84,11 @@ class InvalidItem
     }
 }
 
-// Repository with invalid relation config (too few elements)
+// Repository with invalid relation config (non-DTO value - array instead of RelationType)
 class InvalidConfigRepository1 extends BaseRepository
 {
     protected array $relationConfig = [
-        'invalid' => ['hasMany'], // Missing required elements
+        'invalid' => ['hasMany', 'someRepo', 'item_id', 'setInvalid'], // Old array format - should be ignored
     ];
 
     public function __construct(\Doctrine\DBAL\Connection $connection)
@@ -96,15 +97,20 @@ class InvalidConfigRepository1 extends BaseRepository
     }
 }
 
-// Repository with invalid relation config (missing property)
+// Repository with invalid relation config (missing repository property)
 class InvalidConfigRepository2 extends BaseRepository
 {
-    protected array $relationConfig = [
-        'invalid' => ['hasMany', 'nonExistentRepository', 'item_id', 'setInvalid'],
-    ];
+    protected array $relationConfig = [];
 
     public function __construct(\Doctrine\DBAL\Connection $connection)
     {
+        $this->relationConfig = [
+            'invalid' => new HasMany(
+                repository: 'nonExistentRepository',
+                foreignKey: 'item_id',
+                setter: 'setInvalid',
+            ),
+        ];
         parent::__construct($connection, InvalidItem::class, 'items');
     }
 }

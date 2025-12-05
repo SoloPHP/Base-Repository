@@ -10,7 +10,7 @@ Lightweight base repository with built-in soft delete and eager loading capabili
 ## Features
 
 - Soft delete with configurable `deleted_at` column
-- Eager loading via `relationConfig` (supports `hasMany`, `hasOne`, and `belongsTo`)
+- Eager loading via `relationConfig` (supports `belongsTo`, `hasOne`, `hasMany`, and `belongsToMany`)
 - Relation filtering with dot-notation (generates efficient `EXISTS (...)` and `NOT EXISTS (...)` subqueries)
 - Rich criteria syntax: equality, NULL, IN lists, operators
 - Pagination and sorting with safe identifier validation
@@ -31,6 +31,8 @@ composer require solophp/base-repository
 
 ```php
 use Solo\BaseRepository\BaseRepository;
+use Solo\BaseRepository\Relation\BelongsTo;
+use Solo\BaseRepository\Relation\HasMany;
 use Doctrine\DBAL\Connection;
 
 // Basic repository (no additional features)
@@ -45,7 +47,7 @@ class LogRepository extends BaseRepository
 // Repository with soft delete
 class UserRepository extends BaseRepository
 {
-    protected string $deletedAtColumn = 'deleted_at'; // Enable soft delete
+    protected ?string $deletedAtColumn = 'deleted_at';
 
     public function __construct(Connection $connection)
     {
@@ -56,17 +58,32 @@ class UserRepository extends BaseRepository
 // Repository with soft delete and eager loading
 class PostRepository extends BaseRepository
 {
-    protected string $deletedAtColumn = 'deleted_at'; // Enable soft delete
-    protected array $relationConfig = [               // Enable eager loading
-        'user' => ['belongsTo', 'userRepository', 'user_id', 'setUser'],
-        'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments']
-    ];
+    protected ?string $deletedAtColumn = 'deleted_at';
+    protected array $relationConfig = [];
 
-    public function __construct(Connection $connection, UserRepository $userRepo, CommentRepository $commentRepo)
-    {
-        parent::__construct($connection, Post::class, 'posts');
+    public UserRepository $userRepository;
+    public CommentRepository $commentRepository;
+
+    public function __construct(
+        Connection $connection,
+        UserRepository $userRepo,
+        CommentRepository $commentRepo
+    ) {
         $this->userRepository = $userRepo;
         $this->commentRepository = $commentRepo;
+        $this->relationConfig = [
+            'user' => new BelongsTo(
+                repository: 'userRepository',
+                foreignKey: 'user_id',
+                setter: 'setUser',
+            ),
+            'comments' => new HasMany(
+                repository: 'commentRepository',
+                foreignKey: 'post_id',
+                setter: 'setComments',
+            ),
+        ];
+        parent::__construct($connection, Post::class, 'posts');
     }
 }
 ```
@@ -188,8 +205,8 @@ $posts = $repo->findBy([
 ```
 
 Notes:
-- Relation types supported: `hasMany`, `hasOne`, `belongsTo`.
-- Column linkage is derived from `relationConfig` (`[type, repositoryProperty, foreignKey, ...]`).
+- Relation types supported: `belongsTo`, `hasOne`, `hasMany`, `belongsToMany`.
+- Column linkage is derived from `relationConfig` (DTO objects).
 - Use `!` prefix before relation name (e.g., `!comments.field`) to generate `NOT EXISTS` instead of `EXISTS`.
 - An empty IN list short-circuits to a non-matching condition.
 - If a relation is present in criteria with an empty filter set, it is treated as a pure existence check (EXISTS without extra predicates).
@@ -307,63 +324,109 @@ $repo->create(['name' => 'Product']); // Missing 'id'
 
 ## Eager Loading
 
-Enable eager loading by defining `$relationConfig`:
+Enable eager loading by defining `$relationConfig` using relation DTO classes:
 
 ```php
+use Solo\BaseRepository\Relation\BelongsTo;
+use Solo\BaseRepository\Relation\HasMany;
+
 class PostRepository extends BaseRepository
 {
-    protected array $relationConfig = [
-        'user' => ['belongsTo', 'userRepository', 'user_id', 'setUser'],
-        'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', ['id' => 'ASC']]
-    ];
+    protected array $relationConfig = [];
 
-    public function __construct(Connection $connection, UserRepository $userRepo, CommentRepository $commentRepo)
-    {
-        parent::__construct($connection, Post::class, 'posts');
+    public UserRepository $userRepository;
+    public CommentRepository $commentRepository;
+
+    public function __construct(
+        Connection $connection,
+        UserRepository $userRepo,
+        CommentRepository $commentRepo
+    ) {
         $this->userRepository = $userRepo;
         $this->commentRepository = $commentRepo;
+        $this->relationConfig = [
+            'user' => new BelongsTo(
+                repository: 'userRepository',
+                foreignKey: 'user_id',
+                setter: 'setUser',
+            ),
+            'comments' => new HasMany(
+                repository: 'commentRepository',
+                foreignKey: 'post_id',
+                setter: 'setComments',
+                orderBy: ['created_at' => 'ASC'],
+            ),
+        ];
+        parent::__construct($connection, Post::class, 'posts');
     }
 }
 ```
 
-### Relation Configuration Format
-```php
-'relationName' => [type, repositoryProperty, foreignKey, setterMethod, ?sort]
-```
+### Relation DTO Classes
 
-- **type**: `'belongsTo'`, `'hasOne'`, or `'hasMany'`
-- **repositoryProperty**: Property name of related repository on current repository
-- **foreignKey**: Foreign key column name
-- **setterMethod**: Method to call on model to set the relation
-- **sort**: Optional sorting for `hasMany` and `hasOne` relations
+| Class | Description |
+|-------|-------------|
+| `BelongsTo` | N:1 relation (model has foreign key) |
+| `HasOne` | 1:1 relation (related model has foreign key, returns single object) |
+| `HasMany` | 1:N relation (related model has foreign key, returns array) |
+| `BelongsToMany` | N:M relation (via pivot table) |
 
 ### Relation Types
 
-#### belongsTo
+#### BelongsTo
 The model has a foreign key pointing to the related model's primary key.
 ```php
+use Solo\BaseRepository\Relation\BelongsTo;
+
 // User belongs to Company (users.company_id -> companies.id)
-protected array $relationConfig = [
-    'company' => ['belongsTo', 'companyRepository', 'company_id', 'setCompany']
-];
+'company' => new BelongsTo(
+    repository: 'companyRepository',
+    foreignKey: 'company_id',
+    setter: 'setCompany',
+),
 ```
 
-#### hasOne
+#### HasOne
 The related model has a foreign key pointing to this model's primary key. Returns a single object or null.
 ```php
+use Solo\BaseRepository\Relation\HasOne;
+
 // User has one Profile (profiles.user_id -> users.id)
-protected array $relationConfig = [
-    'profile' => ['hasOne', 'profileRepository', 'user_id', 'setProfile']
-];
+'profile' => new HasOne(
+    repository: 'profileRepository',
+    foreignKey: 'user_id',
+    setter: 'setProfile',
+),
 ```
 
-#### hasMany
+#### HasMany
 The related model has a foreign key pointing to this model's primary key. Returns an array of objects.
 ```php
+use Solo\BaseRepository\Relation\HasMany;
+
 // Post has many Comments (comments.post_id -> posts.id)
-protected array $relationConfig = [
-    'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments', ['created_at' => 'ASC']]
-];
+'comments' => new HasMany(
+    repository: 'commentRepository',
+    foreignKey: 'post_id',
+    setter: 'setComments',
+    orderBy: ['created_at' => 'ASC'],
+),
+```
+
+#### BelongsToMany
+Many-to-many relation via pivot table.
+```php
+use Solo\BaseRepository\Relation\BelongsToMany;
+
+// Article has many Tags via article_tag pivot table
+'tags' => new BelongsToMany(
+    repository: 'tagRepository',
+    pivot: 'article_tag',
+    foreignPivotKey: 'article_id',
+    relatedPivotKey: 'tag_id',
+    setter: 'setTags',
+    orderBy: ['name' => 'ASC'],
+),
 ```
 
 ### Usage
@@ -390,12 +453,27 @@ $post = $repo->with(['user'])->findOneBy(['slug' => 'my-post']);
 Both soft delete and eager loading can be used together:
 
 ```php
+use Solo\BaseRepository\Relation\BelongsTo;
+
 class PostRepository extends BaseRepository
 {
-    protected string $deletedAtColumn = 'deleted_at';  // Enable soft delete
-    protected array $relationConfig = [                // Enable eager loading
-        'user' => ['belongsTo', 'userRepository', 'user_id', 'setUser']
-    ];
+    protected ?string $deletedAtColumn = 'deleted_at';
+    protected array $relationConfig = [];
+
+    public UserRepository $userRepository;
+
+    public function __construct(Connection $connection, UserRepository $userRepo)
+    {
+        $this->userRepository = $userRepo;
+        $this->relationConfig = [
+            'user' => new BelongsTo(
+                repository: 'userRepository',
+                foreignKey: 'user_id',
+                setter: 'setUser',
+            ),
+        ];
+        parent::__construct($connection, Post::class, 'posts');
+    }
 }
 
 // Usage

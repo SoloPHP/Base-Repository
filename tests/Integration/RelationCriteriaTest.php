@@ -7,6 +7,8 @@ namespace Solo\BaseRepository\Tests\Integration;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 use Solo\BaseRepository\BaseRepository;
+use Solo\BaseRepository\Relation\BelongsTo;
+use Solo\BaseRepository\Relation\HasMany;
 
 class RelationCriteriaTest extends TestCase
 {
@@ -307,10 +309,7 @@ class TagRepository extends BaseRepository
 
 class ArticleRepository extends BaseRepository
 {
-    protected array $relationConfig = [
-        'category' => ['belongsTo', 'categoryRepository', 'category_id', 'setCategory'],
-        'tags' => ['hasMany', 'tagRepository', 'article_id', 'setTags'],
-    ];
+    protected array $relationConfig = [];
 
     public CategoryRepository $categoryRepository;
     public TagRepository $tagRepository;
@@ -322,6 +321,18 @@ class ArticleRepository extends BaseRepository
     ) {
         $this->categoryRepository = $categoryRepository;
         $this->tagRepository = $tagRepository;
+        $this->relationConfig = [
+            'category' => new BelongsTo(
+                repository: 'categoryRepository',
+                foreignKey: 'category_id',
+                setter: 'setCategory',
+            ),
+            'tags' => new HasMany(
+                repository: 'tagRepository',
+                foreignKey: 'article_id',
+                setter: 'setTags',
+            ),
+        ];
         parent::__construct($connection, Article::class, 'articles');
     }
 }

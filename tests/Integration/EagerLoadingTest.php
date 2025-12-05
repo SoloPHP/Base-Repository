@@ -7,6 +7,9 @@ namespace Solo\BaseRepository\Tests\Integration;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 use Solo\BaseRepository\BaseRepository;
+use Solo\BaseRepository\Relation\BelongsTo;
+use Solo\BaseRepository\Relation\HasMany;
+use Solo\BaseRepository\Relation\HasOne;
 
 class EagerLoadingTest extends TestCase
 {
@@ -334,10 +337,7 @@ class CommentRepository extends BaseRepository
 
 class PostRepository extends BaseRepository
 {
-    protected array $relationConfig = [
-        'author' => ['belongsTo', 'authorRepository', 'author_id', 'setAuthor'],
-        'comments' => ['hasMany', 'commentRepository', 'post_id', 'setComments'],
-    ];
+    protected array $relationConfig = [];
 
     public AuthorRepository $authorRepository;
     public CommentRepository $commentRepository;
@@ -349,6 +349,18 @@ class PostRepository extends BaseRepository
     ) {
         $this->authorRepository = $authorRepository;
         $this->commentRepository = $commentRepository;
+        $this->relationConfig = [
+            'author' => new BelongsTo(
+                repository: 'authorRepository',
+                foreignKey: 'author_id',
+                setter: 'setAuthor',
+            ),
+            'comments' => new HasMany(
+                repository: 'commentRepository',
+                foreignKey: 'post_id',
+                setter: 'setComments',
+            ),
+        ];
         parent::__construct($connection, Post::class, 'posts');
     }
 }
@@ -405,9 +417,7 @@ class AuthorWithProfile
 
 class AuthorWithProfileRepository extends BaseRepository
 {
-    protected array $relationConfig = [
-        'profile' => ['hasOne', 'profileRepository', 'author_id', 'setProfile'],
-    ];
+    protected array $relationConfig = [];
 
     public ProfileRepository $profileRepository;
 
@@ -416,6 +426,13 @@ class AuthorWithProfileRepository extends BaseRepository
         ProfileRepository $profileRepository
     ) {
         $this->profileRepository = $profileRepository;
+        $this->relationConfig = [
+            'profile' => new HasOne(
+                repository: 'profileRepository',
+                foreignKey: 'author_id',
+                setter: 'setProfile',
+            ),
+        ];
         parent::__construct($connection, AuthorWithProfile::class, 'authors');
     }
 }

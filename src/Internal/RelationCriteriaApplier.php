@@ -31,7 +31,10 @@ final readonly class RelationCriteriaApplier
      *     type: string,
      *     foreignKey: string,
      *     relatedTable: string,
-     *     relatedPrimaryKey: string
+     *     relatedPrimaryKey: string,
+     *     pivotTable?: string,
+     *     foreignPivotKey?: string,
+     *     relatedPivotKey?: string
      *   }
      */
     public function apply(
@@ -58,22 +61,43 @@ final readonly class RelationCriteriaApplier
             }
 
             $type = $compiled['type'];
-            $foreignKey = $compiled['foreignKey'];
             $relatedTable = $compiled['relatedTable'];
             $relatedPrimaryKey = $compiled['relatedPrimaryKey'];
 
             $alias = 'rel_' . preg_replace('/[^A-Za-z0-9_]/', '_', (string) $actualRelation);
 
-            $sub = $this->connection->createQueryBuilder()
-                ->select('1')
-                ->from($relatedTable, $alias);
+            if ($type === 'belongsToMany') {
+                // For belongsToMany, we need to join through the pivot table
+                $pivotTable = $compiled['pivotTable'];
+                $foreignPivotKey = $compiled['foreignPivotKey'];
+                $relatedPivotKey = $compiled['relatedPivotKey'];
 
-            if ($type === 'hasMany') {
-                $sub->andWhere("{$alias}.{$foreignKey} = {$baseAlias}.{$basePrimaryKey}");
-            } elseif ($type === 'belongsTo') {
-                $sub->andWhere("{$alias}.{$relatedPrimaryKey} = {$baseAlias}.{$foreignKey}");
+                $pivotAlias = 'pivot_' . preg_replace('/[^A-Za-z0-9_]/', '_', (string) $actualRelation);
+
+                $sub = $this->connection->createQueryBuilder()
+                    ->select('1')
+                    ->from($pivotTable, $pivotAlias)
+                    ->innerJoin(
+                        $pivotAlias,
+                        $relatedTable,
+                        $alias,
+                        "{$alias}.{$relatedPrimaryKey} = {$pivotAlias}.{$relatedPivotKey}"
+                    )
+                    ->andWhere("{$pivotAlias}.{$foreignPivotKey} = {$baseAlias}.{$basePrimaryKey}");
             } else {
-                continue;
+                $foreignKey = $compiled['foreignKey'];
+
+                $sub = $this->connection->createQueryBuilder()
+                    ->select('1')
+                    ->from($relatedTable, $alias);
+
+                if ($type === 'hasMany' || $type === 'hasOne') {
+                    $sub->andWhere("{$alias}.{$foreignKey} = {$baseAlias}.{$basePrimaryKey}");
+                } elseif ($type === 'belongsTo') {
+                    $sub->andWhere("{$alias}.{$relatedPrimaryKey} = {$baseAlias}.{$foreignKey}");
+                } else {
+                    continue;
+                }
             }
 
             foreach ($fields as $field => $val) {

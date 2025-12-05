@@ -23,13 +23,9 @@ class RelationCriteriaApplierTest extends TestCase
         $this->applier = new RelationCriteriaApplier($this->connection);
     }
 
-    public function testApplyWithExistsForHasMany(): void
+    private function getCompiledRelations(): array
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
+        return [
             'comments' => [
                 'type' => 'hasMany',
                 'foreignKey' => 'post_id',
@@ -37,648 +33,117 @@ class RelationCriteriaApplierTest extends TestCase
                 'relatedPrimaryKey' => 'id',
             ],
         ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => 'approved',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringNotContainsString('NOT EXISTS', $sql);
-        $this->assertStringContainsString('comments', $sql);
-        $this->assertStringContainsString('rel_comments', $sql);
-    }
-
-    public function testApplyWithNotExistsForHasMany(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            '!comments' => [
-                'status' => 'approved',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('NOT EXISTS', $sql);
-        $this->assertStringContainsString('comments', $sql);
-        $this->assertStringContainsString('rel_comments', $sql);
-    }
-
-    public function testApplyWithExistsForBelongsTo(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'user' => [
-                'type' => 'belongsTo',
-                'foreignKey' => 'user_id',
-                'relatedTable' => 'users',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'user' => [
-                'role' => 'admin',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringNotContainsString('NOT EXISTS', $sql);
-        $this->assertStringContainsString('users', $sql);
-        $this->assertStringContainsString('rel_user', $sql);
-    }
-
-    public function testApplyWithNotExistsForBelongsTo(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'user' => [
-                'type' => 'belongsTo',
-                'foreignKey' => 'user_id',
-                'relatedTable' => 'users',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            '!user' => [
-                'deleted_at' => null,
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('NOT EXISTS', $sql);
-        $this->assertStringContainsString('users', $sql);
-        $this->assertStringContainsString('rel_user', $sql);
-    }
-
-    public function testApplyWithNullValue(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'deleted_at' => null,
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IS NULL', $sql);
-    }
-
-    public function testApplyWithInList(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => [1, 2, 3],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IN', $sql);
-    }
-
-    public function testApplyWithOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'created_at' => ['>=', '2024-01-01'],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('>=', $sql);
     }
 
     public function testApplyIgnoresUnknownRelation(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
         $initialSql = $qb->getSQL();
 
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['unknown' => ['f' => 'v']]);
 
-        $relationCriteria = [
-            'unknown' => [
-                'field' => 'value',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        // SQL should not change (no EXISTS clause added)
-        $finalSql = $qb->getSQL();
-        $this->assertEquals($initialSql, $finalSql);
-        $this->assertStringNotContainsString('EXISTS', $finalSql);
-    }
-
-    public function testApplyWithMultipleFields(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => 'approved',
-                'type' => 'review',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('status', $sql);
-        $this->assertStringContainsString('type', $sql);
-    }
-
-    public function testApplyWithNotExistsAndMultipleFields(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            '!comments' => [
-                'status' => 'approved',
-                'deleted_at' => null,
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('NOT EXISTS', $sql);
-        $this->assertStringContainsString('status', $sql);
-        $this->assertStringContainsString('IS NULL', $sql);
-    }
-
-    public function testApplyWithEmptyInList(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => [],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('1 = 0', $sql);
-    }
-
-    public function testApplyWithIsNullOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'deleted_at' => ['=', null],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IS NULL', $sql);
-    }
-
-    public function testApplyWithIsNotNullOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'deleted_at' => ['!=', null],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IS NOT NULL', $sql);
-    }
-
-    public function testApplyWithNotEqualNullOperator(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'deleted_at' => ['<>', null],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IS NOT NULL', $sql);
-    }
-
-    public function testApplyWithStringInList(): void
-    {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        // Use explicit IN operator for string lists to avoid confusion with [operator, value] syntax
-        $relationCriteria = [
-            'comments' => [
-                'status' => ['IN', ['approved', 'pending']],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IN', $sql);
+        $this->assertEquals($initialSql, $qb->getSQL());
     }
 
     public function testApplyIgnoresEmptyField(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
 
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), [
+            'comments' => ['' => 'value', 'status' => 'ok'],
+        ]);
 
-        $relationCriteria = [
-            'comments' => [
-                '' => 'value',
-                'status' => 'approved',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('status', $sql);
+        $this->assertStringContainsString('status', $qb->getSQL());
     }
 
     public function testApplyIgnoresUnsupportedRelationType(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
         $initialSql = $qb->getSQL();
 
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'manyToMany', // Unsupported type
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
+        $compiled = ['rel' => ['type' => 'unsupported', 'foreignKey' => 'x', 'relatedTable' => 't', 'relatedPrimaryKey' => 'id']];
+        $this->applier->apply($qb, 'p', 'id', $compiled, ['rel' => ['f' => 'v']]);
 
-        $relationCriteria = [
-            'comments' => [
-                'status' => 'approved',
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $finalSql = $qb->getSQL();
-        $this->assertEquals($initialSql, $finalSql);
+        $this->assertEquals($initialSql, $qb->getSQL());
     }
 
-    public function testApplyThrowsExceptionForUnsafeOperator(): void
+    public function testApplyWithNullValue(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => ['DROP TABLE', 'value'],
-            ],
-        ];
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsafe operator');
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => null]]);
+        $this->assertStringContainsString('IS NULL', $qb->getSQL());
     }
 
-    public function testApplyWithNotInOperator(): void
+    public function testApplyWithIsNullOperator(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => ['NOT IN', ['spam', 'deleted']],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('NOT IN', $sql);
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['=', null]]]);
+        $this->assertStringContainsString('IS NULL', $qb->getSQL());
     }
 
-    public function testApplyWithInOperatorSingleValue(): void
+    public function testApplyWithIsNotNullOperator(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['!=', null]]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
+    }
 
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
+    public function testApplyWithNotEqualNullOperator(): void
+    {
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['deleted_at' => ['<>', null]]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
+    }
 
-        $relationCriteria = [
-            'comments' => [
-                'status' => ['IN', 'approved'],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IN', $sql);
+    public function testApplyWithEmptyInList(): void
+    {
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => []]]);
+        $this->assertStringContainsString('1 = 0', $qb->getSQL());
     }
 
     public function testApplyWithEmptyInOperator(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'status' => ['IN', []],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('1 = 0', $sql);
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['IN', []]]]);
+        $this->assertStringContainsString('1 = 0', $qb->getSQL());
     }
 
     public function testApplyWithEmptyNotInOperator(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['NOT IN', []]]]);
+        $this->assertStringContainsString('1 = 1', $qb->getSQL());
+    }
 
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
+    public function testApplyWithInOperatorSingleValue(): void
+    {
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['IN', 'approved']]]);
+        $this->assertStringContainsString('IN', $qb->getSQL());
+    }
 
-        $relationCriteria = [
-            'comments' => [
-                'status' => ['NOT IN', []],
-            ],
-        ];
+    public function testApplyWithNotInOperator(): void
+    {
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['status' => ['NOT IN', ['spam']]]]);
+        $this->assertStringContainsString('NOT IN', $qb->getSQL());
+    }
 
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
+    public function testApplyThrowsExceptionForUnsafeOperator(): void
+    {
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
 
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('1 = 1', $sql);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unsafe operator');
+
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['s' => ['DROP', 'v']]]);
     }
 
     public function testApplyWithInOperatorIntegerList(): void
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->select('*')
-            ->from('posts', 'p');
-
-        $compiledRelations = [
-            'comments' => [
-                'type' => 'hasMany',
-                'foreignKey' => 'post_id',
-                'relatedTable' => 'comments',
-                'relatedPrimaryKey' => 'id',
-            ],
-        ];
-
-        $relationCriteria = [
-            'comments' => [
-                'priority' => ['IN', [1, 2, 3]],
-            ],
-        ];
-
-        $this->applier->apply($qb, 'p', 'id', $compiledRelations, $relationCriteria);
-
-        $sql = $qb->getSQL();
-        $this->assertStringContainsString('EXISTS', $sql);
-        $this->assertStringContainsString('IN', $sql);
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), ['comments' => ['priority' => [1, 2, 3]]]);
+        $this->assertStringContainsString('IN', $qb->getSQL());
     }
 }

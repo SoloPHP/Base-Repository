@@ -12,6 +12,11 @@ use Solo\BaseRepository\Internal\CriteriaBuilder;
 use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\EagerLoadingService;
 use Solo\BaseRepository\Internal\RelationCriteriaApplier;
+use Solo\BaseRepository\Relation\RelationType;
+use Solo\BaseRepository\Relation\BelongsTo;
+use Solo\BaseRepository\Relation\BelongsToMany;
+use Solo\BaseRepository\Relation\HasMany;
+use Solo\BaseRepository\Relation\HasOne;
 
 /**
  * @template TModel of object
@@ -30,6 +35,7 @@ abstract class BaseRepository implements RepositoryInterface
 
     // Configuration properties - override in child classes
     protected ?string $deletedAtColumn = null;
+    /** @var array<string, RelationType|mixed> */
     protected array $relationConfig = [];
     protected bool $useAutoIncrement = true;
 
@@ -92,7 +98,7 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * @return non-empty-string
      */
-    protected function getTableName(): string
+    public function getTableName(): string
     {
         return $this->table;
     }
@@ -100,9 +106,28 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * @return non-empty-string
      */
-    protected function getPrimaryKeyName(): string
+    public function getPrimaryKeyName(): string
     {
         return $this->primaryKey;
+    }
+
+    /**
+     * Get the database connection
+     */
+    public function getConnection(): Connection
+    {
+        return $this->connection;
+    }
+
+    /**
+     * Map a database row to a model instance
+     *
+     * @param array<string, mixed> $row
+     * @return TModel
+     */
+    public function mapToModel(array $row): object
+    {
+        return $this->mapRowToModel($row);
     }
 
     /**
@@ -520,29 +545,43 @@ abstract class BaseRepository implements RepositoryInterface
 
     /**
      * Compile relation metadata from relationConfig and repository graph.
-     * @return array<string, array{type:string, foreignKey:string, relatedTable:string, relatedPrimaryKey:string}>
      */
     private function compileRelationMetadata(): array
     {
         $result = [];
         foreach ($this->relationConfig as $relation => $config) {
-            if (!is_array($config) || count($config) < 3) {
+            if (!$config instanceof RelationType) {
                 continue;
             }
-            [$type, $repositoryProperty, $foreignKey] = $config;
-            if (!property_exists($this, (string) $repositoryProperty)) {
+
+            $repositoryProperty = $config->getRepository();
+
+            if (!property_exists($this, $repositoryProperty)) {
                 continue;
             }
+
             $relatedRepo = $this->{$repositoryProperty};
             $relatedTable = $relatedRepo->getTableName();
             $relatedPrimaryKey = $relatedRepo->getPrimaryKeyName();
 
-            $result[$relation] = [
-                'type' => (string) $type,
-                'foreignKey' => (string) $foreignKey,
-                'relatedTable' => $relatedTable,
-                'relatedPrimaryKey' => (string) $relatedPrimaryKey,
-            ];
+            if ($config instanceof BelongsToMany) {
+                $result[$relation] = [
+                    'type' => $config->getType(),
+                    'relatedTable' => $relatedTable,
+                    'relatedPrimaryKey' => $relatedPrimaryKey,
+                    'pivotTable' => $config->pivot,
+                    'foreignPivotKey' => $config->foreignPivotKey,
+                    'relatedPivotKey' => $config->relatedPivotKey,
+                ];
+            } else {
+                /** @var BelongsTo|HasMany|HasOne $config */
+                $result[$relation] = [
+                    'type' => $config->getType(),
+                    'foreignKey' => $config->foreignKey,
+                    'relatedTable' => $relatedTable,
+                    'relatedPrimaryKey' => $relatedPrimaryKey,
+                ];
+            }
         }
         return $result;
     }
