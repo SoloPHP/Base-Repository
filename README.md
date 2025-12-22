@@ -307,6 +307,27 @@ $item = $repo->create([
 ]);
 ```
 
+### Custom Primary Key Name
+
+For tables with a different primary key column name, override the `$primaryKey` property:
+
+```php
+class OrderRepository extends BaseRepository
+{
+    protected string $primaryKey = 'order_id';  // instead of default 'id'
+
+    public function __construct(Connection $connection)
+    {
+        parent::__construct($connection, Order::class, 'orders');
+    }
+}
+
+// Usage
+$order = $repo->find('ORD-001');           // uses order_id column
+$repo->update('ORD-001', ['status' => 'shipped']);
+$repo->delete('ORD-001');
+```
+
 ## Eager Loading
 
 Enable eager loading by defining `$relationConfig` using relation DTO classes:
