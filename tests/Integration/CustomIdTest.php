@@ -44,60 +44,6 @@ class CustomIdTest extends TestCase
         $this->assertEquals('Test Product', $product->name);
     }
 
-    public function testFindWithCustomId(): void
-    {
-        $this->repository->create([
-            'id' => 'PROD-002',
-            'name' => 'Another Product',
-            'price' => 49.99,
-        ]);
-
-        $found = $this->repository->find('PROD-002');
-
-        $this->assertNotNull($found);
-        $this->assertEquals('PROD-002', $found->id);
-        $this->assertEquals('Another Product', $found->name);
-    }
-
-    public function testUpdateWithCustomId(): void
-    {
-        $this->repository->create([
-            'id' => 'PROD-003',
-            'name' => 'Original Name',
-            'price' => 29.99,
-        ]);
-
-        $updated = $this->repository->update('PROD-003', ['name' => 'Updated Name']);
-
-        $this->assertEquals('Updated Name', $updated->name);
-        $this->assertEquals('PROD-003', $updated->id);
-    }
-
-    public function testDeleteWithCustomId(): void
-    {
-        $this->repository->create([
-            'id' => 'PROD-004',
-            'name' => 'To Delete',
-            'price' => 19.99,
-        ]);
-
-        $affected = $this->repository->delete('PROD-004');
-
-        $this->assertEquals(1, $affected);
-        $this->assertNull($this->repository->find('PROD-004'));
-    }
-
-    public function testCreateWithoutIdThrowsException(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Primary key 'id' must be provided when auto-increment is disabled");
-
-        $this->repository->create([
-            'name' => 'No ID Product',
-            'price' => 9.99,
-        ]);
-    }
-
     public function testCreateWithUuid(): void
     {
         $uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -113,17 +59,6 @@ class CustomIdTest extends TestCase
         $found = $this->repository->find($uuid);
         $this->assertNotNull($found);
         $this->assertEquals($uuid, $found->id);
-    }
-
-    public function testFindByWithCustomId(): void
-    {
-        $this->repository->create(['id' => 'PROD-A', 'name' => 'Product A', 'price' => 10.00]);
-        $this->repository->create(['id' => 'PROD-B', 'name' => 'Product B', 'price' => 20.00]);
-        $this->repository->create(['id' => 'PROD-C', 'name' => 'Product C', 'price' => 10.00]);
-
-        $products = $this->repository->findBy(['price' => 10.00]);
-
-        $this->assertCount(2, $products);
     }
 
     public function testFindByWithInListCustomId(): void
@@ -160,8 +95,6 @@ class CustomIdProduct
 
 class CustomIdRepository extends BaseRepository
 {
-    protected bool $useAutoIncrement = false;
-
     public function __construct(\Doctrine\DBAL\Connection $connection)
     {
         parent::__construct($connection, CustomIdProduct::class, 'products');

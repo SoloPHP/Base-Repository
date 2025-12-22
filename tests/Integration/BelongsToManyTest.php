@@ -383,8 +383,6 @@ class CategoryUuidModel
 
 class CategoryUuidRepository extends BaseRepository
 {
-    protected bool $useAutoIncrement = false;
-
     public function __construct(\Doctrine\DBAL\Connection $connection)
     {
         parent::__construct($connection, CategoryUuidModel::class, 'categories_uuid');
@@ -393,7 +391,6 @@ class CategoryUuidRepository extends BaseRepository
 
 class ArticleUuidRepository extends BaseRepository
 {
-    protected bool $useAutoIncrement = false;
     protected array $relationConfig = [];
 
     public CategoryUuidRepository $categoryRepository;
