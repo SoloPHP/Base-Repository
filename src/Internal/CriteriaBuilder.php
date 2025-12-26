@@ -40,6 +40,7 @@ final readonly class CriteriaBuilder
             // Check for operator syntax [operator, value] before plain IN list
             if (
                 is_array($value)
+                && count($value) === 2
                 && array_key_exists(0, $value)
                 && array_key_exists(1, $value)
                 && is_string($value[0])
