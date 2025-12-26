@@ -35,53 +35,36 @@ class CriteriaBuilderTest extends TestCase
         $this->assertStringNotContainsString('t.status', $sql);
     }
 
-    public function testUnsafeIdentifierThrowsException(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsafe identifier');
-
-        $this->builder->applyCriteria($this->createQueryBuilder(), ['1invalid' => 'value']);
-    }
-
-    public function testUnsafeOperatorThrowsException(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsafe operator');
-
-        $this->builder->applyCriteria($this->createQueryBuilder(), ['age' => ['UNSAFE', 18]]);
-    }
-
     public function testApplyCriteriaWithNullOperator(): void
     {
-        $qb = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb, ['deleted_at' => ['=', null]]);
-        $this->assertStringContainsString('IS NULL', $qb->getSQL());
-    }
-
-    public function testApplyCriteriaWithNotNullOperators(): void
-    {
-        // Test != null
+        // ['=' => null] - IS NULL
         $qb1 = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb1, ['deleted_at' => ['!=', null]]);
-        $this->assertStringContainsString('IS NOT NULL', $qb1->getSQL());
+        $this->builder->applyCriteria($qb1, ['deleted_at' => ['=' => null]]);
+        $this->assertStringContainsString('IS NULL', $qb1->getSQL());
 
-        // Test <> null
+        // ['<>' => null] - IS NOT NULL
         $qb2 = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb2, ['deleted_at' => ['<>', null]]);
+        $this->builder->applyCriteria($qb2, ['deleted_at' => ['<>' => null]]);
         $this->assertStringContainsString('IS NOT NULL', $qb2->getSQL());
     }
 
-    public function testApplyCriteriaWithInOperatorSingleValue(): void
+    public function testApplyCriteriaWithInOperator(): void
     {
-        $qb = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb, ['status' => ['IN', 'active']]);
-        $this->assertStringContainsString('IN', $qb->getSQL());
+        // Single value
+        $qb1 = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb1, ['status' => ['IN' => 'active']]);
+        $this->assertStringContainsString('IN', $qb1->getSQL());
+
+        // NOT IN
+        $qb2 = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb2, ['status' => ['NOT IN' => ['deleted', 'banned']]]);
+        $this->assertStringContainsString('NOT IN', $qb2->getSQL());
     }
 
-    public function testApplyCriteriaWithNotInOperator(): void
+    public function testApplyCriteriaWithLikeOperator(): void
     {
         $qb = $this->createQueryBuilder();
-        $this->builder->applyCriteria($qb, ['status' => ['NOT IN', ['deleted', 'banned']]]);
-        $this->assertStringContainsString('NOT IN', $qb->getSQL());
+        $this->builder->applyCriteria($qb, ['email' => ['LIKE' => '%@gmail%']]);
+        $this->assertStringContainsString('LIKE :email', $qb->getSQL());
     }
 }

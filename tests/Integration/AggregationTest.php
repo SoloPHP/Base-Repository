@@ -20,7 +20,6 @@ class AggregationTest extends TestCase
             'memory' => true,
         ]);
 
-        // Create test table
         $this->connection->executeStatement('
             CREATE TABLE orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,47 +32,16 @@ class AggregationTest extends TestCase
         $this->repository = new TestOrderRepository($this->connection);
     }
 
-    public function testSum(): void
+    public function testAggregations(): void
     {
         $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
         $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
         $this->repository->create(['total' => 25, 'payment_status' => 'pending']);
 
-        $sum = $this->repository->sum('total', ['payment_status' => 'paid']);
-
-        $this->assertEquals(150, $sum);
-    }
-
-    public function testAvg(): void
-    {
-        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
-
-        $avg = $this->repository->avg('total', ['payment_status' => 'paid']);
-
-        $this->assertEquals(75, $avg);
-    }
-
-    public function testMin(): void
-    {
-        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 25, 'payment_status' => 'paid']);
-
-        $min = $this->repository->min('total', ['payment_status' => 'paid']);
-
-        $this->assertEquals(25, $min);
-    }
-
-    public function testMax(): void
-    {
-        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 200, 'payment_status' => 'paid']);
-
-        $max = $this->repository->max('total', ['payment_status' => 'paid']);
-
-        $this->assertEquals(200, $max);
+        $this->assertEquals(150, $this->repository->sum('total', ['payment_status' => 'paid']));
+        $this->assertEquals(75, $this->repository->avg('total', ['payment_status' => 'paid']));
+        $this->assertEquals(50, $this->repository->min('total', ['payment_status' => 'paid']));
+        $this->assertEquals(100, $this->repository->max('total', ['payment_status' => 'paid']));
     }
 
     public function testAggregationWithSoftDelete(): void
@@ -82,80 +50,33 @@ class AggregationTest extends TestCase
         $deleted = $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
         $this->repository->delete($deleted->id);
 
-        $sum = $this->repository->sum('total', ['payment_status' => 'paid']);
-
-        $this->assertEquals(100, $sum);
+        $this->assertEquals(100, $this->repository->sum('total', ['payment_status' => 'paid']));
     }
 
-    public function testSumReturnsZeroOnEmptyTable(): void
+    public function testAggregationsOnEmptyTable(): void
     {
-        $sum = $this->repository->sum('total');
-
-        $this->assertEquals(0.0, $sum);
-    }
-
-    public function testAvgReturnsZeroOnEmptyTable(): void
-    {
-        $avg = $this->repository->avg('total');
-
-        $this->assertEquals(0.0, $avg);
-    }
-
-    public function testMinReturnsNullOnEmptyTable(): void
-    {
-        $min = $this->repository->min('total');
-
-        $this->assertNull($min);
-    }
-
-    public function testMaxReturnsNullOnEmptyTable(): void
-    {
-        $max = $this->repository->max('total');
-
-        $this->assertNull($max);
-    }
-
-    public function testCountOnEmptyTable(): void
-    {
-        $count = $this->repository->count([]);
-
-        $this->assertEquals(0, $count);
-    }
-
-    public function testExistsOnEmptyTable(): void
-    {
+        $this->assertEquals(0.0, $this->repository->sum('total'));
+        $this->assertEquals(0.0, $this->repository->avg('total'));
+        $this->assertNull($this->repository->min('total'));
+        $this->assertNull($this->repository->max('total'));
+        $this->assertEquals(0, $this->repository->count([]));
         $this->assertFalse($this->repository->exists([]));
     }
 
-    public function testSumWithNoCriteriaMatch(): void
-    {
-        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
-
-        $sum = $this->repository->sum('total', ['payment_status' => 'nonexistent']);
-
-        $this->assertEquals(0.0, $sum);
-    }
-
-    public function testCountWithOperator(): void
-    {
-        $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 50, 'payment_status' => 'paid']);
-        $this->repository->create(['total' => 25, 'payment_status' => 'pending']);
-
-        $count = $this->repository->count(['total' => ['>=', 50]]);
-
-        $this->assertEquals(2, $count);
-    }
-
-    public function testSumWithInOperator(): void
+    public function testAggregationsWithOperators(): void
     {
         $this->repository->create(['total' => 100, 'payment_status' => 'paid']);
         $this->repository->create(['total' => 50, 'payment_status' => 'pending']);
         $this->repository->create(['total' => 25, 'payment_status' => 'cancelled']);
 
-        $sum = $this->repository->sum('total', ['payment_status' => ['IN', ['paid', 'pending']]]);
+        // Count with operator
+        $this->assertEquals(2, $this->repository->count(['total' => ['>=' => 50]]));
 
-        $this->assertEquals(150, $sum);
+        // Sum with IN operator
+        $this->assertEquals(150, $this->repository->sum('total', ['payment_status' => ['IN' => ['paid', 'pending']]]));
+
+        // No match
+        $this->assertEquals(0.0, $this->repository->sum('total', ['payment_status' => 'nonexistent']));
     }
 }
 

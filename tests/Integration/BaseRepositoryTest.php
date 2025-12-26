@@ -53,39 +53,26 @@ class BaseRepositoryTest extends TestCase
         $this->assertNotNull($user->id);
     }
 
-    public function testFind(): void
+    public function testFindAndFindOneBy(): void
     {
         $created = $this->repository->create([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
-        ]);
-
-        $found = $this->repository->find($created->id);
-
-        $this->assertNotNull($found);
-        $this->assertEquals($created->id, $found->id);
-        $this->assertEquals('Jane Doe', $found->name);
-    }
-
-    public function testFindReturnsNullWhenNotFound(): void
-    {
-        $found = $this->repository->find(999);
-
-        $this->assertNull($found);
-    }
-
-    public function testFindOneBy(): void
-    {
-        $this->repository->create([
-            'name' => 'John',
-            'email' => 'john@example.com',
             'status' => 'active',
         ]);
 
-        $user = $this->repository->findOneBy(['email' => 'john@example.com']);
+        // find()
+        $found = $this->repository->find($created->id);
+        $this->assertNotNull($found);
+        $this->assertEquals($created->id, $found->id);
 
+        // find() returns null when not found
+        $this->assertNull($this->repository->find(999));
+
+        // findOneBy()
+        $user = $this->repository->findOneBy(['email' => 'jane@example.com']);
         $this->assertNotNull($user);
-        $this->assertEquals('john@example.com', $user->email);
+        $this->assertEquals('jane@example.com', $user->email);
     }
 
     public function testFindBy(): void
@@ -227,25 +214,19 @@ class BaseRepositoryTest extends TestCase
         $this->assertEquals(3, $this->repository->count([]));
     }
 
-    public function testFindByWithInList(): void
+    public function testFindByWithCriteriaVariants(): void
     {
-        $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com']);
-        $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com']);
-        $user3 = $this->repository->create(['name' => 'User 3', 'email' => 'user3@example.com']);
+        $user1 = $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com', 'status' => null]);
+        $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com', 'status' => 'active']);
+        $user3 = $this->repository->create(['name' => 'User 3', 'email' => 'user3@example.com', 'status' => 'active']);
 
+        // IN list
         $users = $this->repository->findBy(['id' => [$user3->id]]);
-
         $this->assertCount(1, $users);
         $this->assertEquals('User 3', $users[0]->name);
-    }
 
-    public function testFindByWithNull(): void
-    {
-        $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com', 'status' => null]);
-        $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com', 'status' => 'active']);
-
+        // Null value
         $users = $this->repository->findBy(['status' => null]);
-
         $this->assertCount(1, $users);
         $this->assertNull($users[0]->status);
     }
@@ -266,79 +247,54 @@ class BaseRepositoryTest extends TestCase
         $postRepo->create(['title' => 'Post 2', 'views' => 20]);
         $postRepo->create(['title' => 'Post 3', 'views' => 5]);
 
-        $posts = $postRepo->findBy(['views' => ['>=', 10]]);
-
-        $this->assertCount(2, $posts);
+        $this->assertCount(2, $postRepo->findBy(['views' => ['>=' => 10]]));
     }
 
-    public function testTransactionMethods(): void
+    public function testTransactions(): void
     {
+        // Basic transaction methods
         $this->assertFalse($this->repository->inTransaction());
-
         $this->repository->beginTransaction();
         $this->assertTrue($this->repository->inTransaction());
-
         $this->repository->commit();
         $this->assertFalse($this->repository->inTransaction());
-    }
 
-    public function testWithTransaction(): void
-    {
+        // withTransaction success
         $result = $this->repository->withTransaction(function ($repo) {
             $repo->create(['name' => 'User 1', 'email' => 'user1@example.com']);
             $repo->create(['name' => 'User 2', 'email' => 'user2@example.com']);
             return 'success';
         });
-
         $this->assertEquals('success', $result);
         $this->assertEquals(2, $this->repository->count([]));
-    }
 
-    public function testWithTransactionRollback(): void
-    {
+        // withTransaction rollback
         try {
             $this->repository->withTransaction(function ($repo) {
-                $repo->create(['name' => 'User 1', 'email' => 'user1@example.com']);
+                $repo->create(['name' => 'Temp', 'email' => 'temp@example.com']);
                 throw new \RuntimeException('Test rollback');
             });
         } catch (\RuntimeException $e) {
             $this->assertEquals('Test rollback', $e->getMessage());
         }
-
-        $this->assertEquals(0, $this->repository->count([]));
+        $this->assertEquals(2, $this->repository->count([])); // Still 2, temp not committed
     }
 
-    public function testInsertManyWithEmptyRecords(): void
+    public function testEdgeCases(): void
     {
-        $affected = $this->repository->insertMany([]);
+        // Insert many with empty array
+        $this->assertEquals(0, $this->repository->insertMany([]));
 
-        $this->assertEquals(0, $affected);
-    }
-
-    public function testFindOneByWithOrderBy(): void
-    {
+        // FindOneBy with orderBy
         $this->repository->create(['name' => 'B User', 'email' => 'b@example.com']);
         $this->repository->create(['name' => 'A User', 'email' => 'a@example.com']);
-        $this->repository->create(['name' => 'C User', 'email' => 'c@example.com']);
-
         $user = $this->repository->findOneBy([], ['name' => 'ASC']);
-
         $this->assertNotNull($user);
         $this->assertEquals('A User', $user->name);
-    }
 
-    public function testUpdateByReturnsZeroWhenNoMatch(): void
-    {
-        $affected = $this->repository->updateBy(['status' => 'nonexistent'], ['status' => 'updated']);
-
-        $this->assertEquals(0, $affected);
-    }
-
-    public function testDeleteByReturnsZeroWhenNoMatch(): void
-    {
-        $affected = $this->repository->deleteBy(['status' => 'nonexistent']);
-
-        $this->assertEquals(0, $affected);
+        // No match returns zero
+        $this->assertEquals(0, $this->repository->updateBy(['status' => 'nonexistent'], ['status' => 'updated']));
+        $this->assertEquals(0, $this->repository->deleteBy(['status' => 'nonexistent']));
     }
 
     public function testQueryBuilderAccess(): void
@@ -346,9 +302,7 @@ class BaseRepositoryTest extends TestCase
         $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com']);
         $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com']);
 
-        $count = $this->repository->countWithCustomQuery();
-
-        $this->assertEquals(2, $count);
+        $this->assertEquals(2, $this->repository->countWithCustomQuery());
     }
 }
 

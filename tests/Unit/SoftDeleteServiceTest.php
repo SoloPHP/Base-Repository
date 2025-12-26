@@ -24,10 +24,10 @@ class SoftDeleteServiceTest extends TestCase
     {
         $service = new SoftDeleteService('deleted_at');
 
-        $criteria = ['deleted_at' => ['!=', null], 'status' => 'active'];
+        $criteria = ['deleted_at' => ['!=' => null], 'status' => 'active'];
         $result = $service->applyCriteria($criteria);
 
-        $this->assertEquals(['!=', null], $result['deleted_at']);
+        $this->assertEquals(['!=' => null], $result['deleted_at']);
     }
 
     public function testGetSoftDeleteData(): void

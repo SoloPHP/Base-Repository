@@ -112,9 +112,21 @@ final readonly class RelationCriteriaApplier
                     continue;
                 }
 
-                // Check for operator syntax [operator, value] before plain IN list
-                if (is_array($val) && array_key_exists(0, $val) && array_key_exists(1, $val) && is_string($val[0])) {
-                    [$operator, $value] = $val;
+                if (is_array($val)) {
+                    if (array_is_list($val)) {
+                        // Sequential array = IN list: ['active', 'pending']
+                        if ($val === []) {
+                            $sub->andWhere('1 = 0');
+                            continue;
+                        }
+                        $sub->andWhere($sub->expr()->in("{$alias}.{$field}", ':' . $paramName));
+                        $qb->setParameter($paramName, $val, $this->determineArrayParamType($val));
+                        continue;
+                    }
+
+                    // Associative array = operator syntax: ['!=' => 'value']
+                    $operator = (string) array_key_first($val);
+                    $value = $val[$operator];
                     $this->assertSafeOperator($operator);
                     $upperOp = strtoupper($operator);
 
@@ -129,7 +141,6 @@ final readonly class RelationCriteriaApplier
                         }
                     }
 
-                    // Handle IN and NOT IN operators
                     if ($upperOp === 'IN' || $upperOp === 'NOT IN') {
                         if (!is_array($value)) {
                             $value = [$value];
@@ -148,17 +159,6 @@ final readonly class RelationCriteriaApplier
 
                     $sub->andWhere("{$alias}.{$field} {$operator} :{$paramName}");
                     $qb->setParameter($paramName, $value);
-                    continue;
-                }
-
-                // Plain array treated as IN list
-                if (is_array($val) && array_is_list($val)) {
-                    if ($val === []) {
-                        $sub->andWhere('1 = 0');
-                        continue;
-                    }
-                    $sub->andWhere($sub->expr()->in("{$alias}.{$field}", ':' . $paramName));
-                    $qb->setParameter($paramName, $val, $this->determineArrayParamType($val));
                     continue;
                 }
 

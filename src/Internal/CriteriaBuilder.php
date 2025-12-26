@@ -37,15 +37,17 @@ final readonly class CriteriaBuilder
                 continue;
             }
 
-            // Check for operator syntax [operator, value] before plain IN list
-            if (
-                is_array($value)
-                && count($value) === 2
-                && array_key_exists(0, $value)
-                && array_key_exists(1, $value)
-                && is_string($value[0])
-            ) {
-                [$operator, $val] = $value;
+            if (is_array($value)) {
+                if (array_is_list($value)) {
+                    // Sequential array = IN list: ['active', 'pending']
+                    $qb->andWhere($qb->expr()->in($quotedField, ':' . $field));
+                    $qb->setParameter($field, $value, $this->determineArrayParamType($value));
+                    continue;
+                }
+
+                // Associative array = operator syntax: ['!=' => 'value']
+                $operator = (string) array_key_first($value);
+                $val = $value[$operator];
                 $this->assertSafeOperator($operator);
                 $upperOp = strtoupper($operator);
 
@@ -74,13 +76,6 @@ final readonly class CriteriaBuilder
 
                 $qb->andWhere("{$quotedField} {$operator} :{$field}");
                 $qb->setParameter($field, $val);
-                continue;
-            }
-
-            // Plain array treated as IN list
-            if (is_array($value) && array_is_list($value)) {
-                $qb->andWhere($qb->expr()->in($quotedField, ':' . $field));
-                $qb->setParameter($field, $value, $this->determineArrayParamType($value));
                 continue;
             }
 

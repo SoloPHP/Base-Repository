@@ -67,8 +67,8 @@ class CustomIdTest extends TestCase
         $this->repository->create(['id' => 'PROD-Y', 'name' => 'Product Y', 'price' => 20.00]);
         $this->repository->create(['id' => 'PROD-Z', 'name' => 'Product Z', 'price' => 30.00]);
 
-        // Use explicit IN operator for string lists to avoid confusion with [operator, value] syntax
-        $products = $this->repository->findBy(['id' => ['IN', ['PROD-X', 'PROD-Z']]]);
+        // Use associative array syntax for explicit IN operator
+        $products = $this->repository->findBy(['id' => ['IN' => ['PROD-X', 'PROD-Z']]]);
 
         $this->assertCount(2, $products);
     }

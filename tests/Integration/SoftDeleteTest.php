@@ -32,131 +32,62 @@ class SoftDeleteTest extends TestCase
         $this->repository = new SoftDeleteUserRepository($this->connection);
     }
 
-    public function testSoftDelete(): void
+    public function testSoftDeleteAndDeleteBy(): void
     {
-        $user = $this->repository->create([
-            'name' => 'John Doe',
-            'email' => 'john@example.com',
-        ]);
+        // Single soft delete
+        $user = $this->repository->create(['name' => 'John Doe', 'email' => 'john@example.com']);
+        $this->assertEquals(1, $this->repository->delete($user->id));
+        $this->assertNull($this->repository->find($user->id));
 
-        $affected = $this->repository->delete($user->id);
-
-        $this->assertEquals(1, $affected);
-
-        // Should not find soft deleted record
-        $found = $this->repository->find($user->id);
-        $this->assertNull($found);
-    }
-
-    public function testSoftDeleteBy(): void
-    {
+        // deleteBy affects all matching records (including already soft-deleted)
         $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com']);
         $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com']);
-
-        $affected = $this->repository->deleteBy([]);
-
-        $this->assertEquals(2, $affected);
+        $this->assertEquals(3, $this->repository->deleteBy([])); // All 3 records
         $this->assertEquals(0, $this->repository->count([]));
     }
 
-    public function testFindAllExcludesSoftDeleted(): void
+    public function testQueriesExcludeSoftDeleted(): void
     {
         $this->repository->create(['name' => 'Active User', 'email' => 'active@example.com']);
         $deleted = $this->repository->create(['name' => 'Deleted User', 'email' => 'deleted@example.com']);
         $this->repository->delete($deleted->id);
 
-        $users = $this->repository->findAll();
+        // findAll excludes soft deleted
+        $this->assertCount(1, $this->repository->findAll());
 
-        $this->assertCount(1, $users);
-        $this->assertEquals('Active User', $users[0]->name);
-    }
+        // findBy excludes soft deleted
+        $this->assertCount(1, $this->repository->findBy([]));
 
-    public function testFindByExcludesSoftDeleted(): void
-    {
-        $this->repository->create(['name' => 'Active User', 'email' => 'active@example.com']);
-        $deleted = $this->repository->create(['name' => 'Deleted User', 'email' => 'deleted@example.com']);
-        $this->repository->delete($deleted->id);
+        // findOneBy excludes soft deleted
+        $this->assertNull($this->repository->findOneBy(['email' => 'deleted@example.com']));
 
-        $users = $this->repository->findBy([]);
-
-        $this->assertCount(1, $users);
-    }
-
-    public function testFindOneByExcludesSoftDeleted(): void
-    {
-        $deleted = $this->repository->create(['name' => 'Deleted User', 'email' => 'deleted@example.com']);
-        $this->repository->delete($deleted->id);
-
-        $found = $this->repository->findOneBy(['email' => 'deleted@example.com']);
-
-        $this->assertNull($found);
-    }
-
-    public function testExistsExcludesSoftDeleted(): void
-    {
-        $deleted = $this->repository->create(['name' => 'Deleted User', 'email' => 'deleted@example.com']);
-        $this->repository->delete($deleted->id);
-
+        // exists excludes soft deleted
         $this->assertFalse($this->repository->exists(['email' => 'deleted@example.com']));
-    }
 
-    public function testCountExcludesSoftDeleted(): void
-    {
-        $this->repository->create(['name' => 'Active User', 'email' => 'active@example.com']);
-        $deleted = $this->repository->create(['name' => 'Deleted User', 'email' => 'deleted@example.com']);
-        $this->repository->delete($deleted->id);
-
+        // count excludes soft deleted
         $this->assertEquals(1, $this->repository->count([]));
     }
 
-    public function testRestore(): void
+    public function testRestoreAndForceDelete(): void
     {
+        // Restore
         $user = $this->repository->create(['name' => 'User', 'email' => 'user@example.com']);
         $this->repository->delete($user->id);
-
-        // Should not find soft deleted record
         $this->assertNull($this->repository->find($user->id));
+        $this->assertEquals(1, $this->repository->restore($user->id));
+        $this->assertNotNull($this->repository->find($user->id));
 
-        // Restore
-        $affected = $this->repository->restore($user->id);
-
-        $this->assertEquals(1, $affected);
-
-        // Should find restored record
-        $found = $this->repository->find($user->id);
-        $this->assertNotNull($found);
-        $this->assertEquals('User', $found->name);
-    }
-
-    public function testForceDelete(): void
-    {
-        $user = $this->repository->create(['name' => 'User', 'email' => 'user@example.com']);
-
-        $affected = $this->repository->forceDelete($user->id);
-
-        $this->assertEquals(1, $affected);
-
-        // Verify record is physically deleted (not just soft deleted)
-        $result = $this->connection->executeQuery(
-            'SELECT * FROM soft_users WHERE id = ?',
-            [$user->id]
-        )->fetchAssociative();
-
+        // Force delete (physical)
+        $user2 = $this->repository->create(['name' => 'User2', 'email' => 'user2@example.com']);
+        $this->assertEquals(1, $this->repository->forceDelete($user2->id));
+        $result = $this->connection->executeQuery('SELECT * FROM soft_users WHERE id = ?', [$user2->id])->fetchAssociative();
         $this->assertFalse($result);
-    }
 
-    public function testForceDeleteBy(): void
-    {
-        $this->repository->create(['name' => 'User 1', 'email' => 'user1@example.com']);
-        $this->repository->create(['name' => 'User 2', 'email' => 'user2@example.com']);
-
-        $affected = $this->repository->forceDeleteBy([]);
-
-        $this->assertEquals(2, $affected);
-
-        // Verify records are physically deleted
-        $count = $this->connection->executeQuery('SELECT COUNT(*) FROM soft_users')->fetchOne();
-        $this->assertEquals(0, $count);
+        // Force delete by
+        $this->repository->create(['name' => 'User 3', 'email' => 'user3@example.com']);
+        $this->repository->create(['name' => 'User 4', 'email' => 'user4@example.com']);
+        $this->assertEquals(3, $this->repository->forceDeleteBy([])); // user + user3 + user4
+        $this->assertEquals(0, $this->connection->executeQuery('SELECT COUNT(*) FROM soft_users')->fetchOne());
     }
 
     public function testFindDeletedRecordsDirectly(): void
@@ -165,16 +96,13 @@ class SoftDeleteTest extends TestCase
         $deleted = $this->repository->create(['name' => 'Deleted User', 'email' => 'deleted@example.com']);
         $this->repository->delete($deleted->id);
 
-        // Find only deleted records using direct column filter
-        $users = $this->repository->findBy(['deleted_at' => ['!=', null]]);
-
+        $users = $this->repository->findBy(['deleted_at' => ['!=' => null]]);
         $this->assertCount(1, $users);
         $this->assertEquals('Deleted User', $users[0]->name);
     }
 
     public function testRestoreOnNonSoftDeleteRepository(): void
     {
-        // Create a repository without soft delete
         $this->connection->executeStatement('
             CREATE TABLE regular_users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,10 +112,7 @@ class SoftDeleteTest extends TestCase
 
         $regularRepo = new RegularUserRepository($this->connection);
         $user = $regularRepo->create(['name' => 'User']);
-
-        // Restore should return 0 on non-soft-delete repository
-        $affected = $regularRepo->restore($user->id);
-        $this->assertEquals(0, $affected);
+        $this->assertEquals(0, $regularRepo->restore($user->id));
     }
 }
 

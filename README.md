@@ -127,19 +127,19 @@ __construct(
 | Equality | `['status' => 'active']` | `status = ?` |
 | Null | `['deleted_at' => null]` | `deleted_at IS NULL` |
 | IN (list) | `['id' => [1,2,3]]` | `id IN (?, ?, ?)` |
-| Operator `=` | `['status' => ['=', 'active']]` | `status = ?` |
-| Operator `!=` | `['status' => ['!=', 'draft']]` | `status != ?` |
-| Operator `<>` | `['status' => ['<>', 'draft']]` | `status <> ?` |
-| Operator `<` | `['age' => ['<', 18]]` | `age < ?` |
-| Operator `>` | `['age' => ['>', 18]]` | `age > ?` |
-| Operator `<=` | `['age' => ['<=', 65]]` | `age <= ?` |
-| Operator `>=` | `['age' => ['>=', 18]]` | `age >= ?` |
-| Operator `LIKE` | `['name' => ['LIKE', '%john%']]` | `name LIKE ?` |
-| Operator `NOT LIKE` | `['name' => ['NOT LIKE', '%test%']]` | `name NOT LIKE ?` |
-| Operator `IN` | `['status' => ['IN', ['a', 'b']]]` | `status IN ?` |
-| Operator `NOT IN` | `['status' => ['NOT IN', ['x', 'y']]]` | `status NOT IN ?` |
-| Null via operator | `['deleted_at' => ['=', null]]` | `deleted_at IS NULL` |
-| Not Null via operator | `['deleted_at' => ['!=', null]]` | `deleted_at IS NOT NULL` |
+| Operator `=` | `['status' => ['=' => 'active']]` | `status = ?` |
+| Operator `!=` | `['status' => ['!=' => 'draft']]` | `status != ?` |
+| Operator `<>` | `['status' => ['<>' => 'draft']]` | `status <> ?` |
+| Operator `<` | `['age' => ['<' => 18]]` | `age < ?` |
+| Operator `>` | `['age' => ['>' => 18]]` | `age > ?` |
+| Operator `<=` | `['age' => ['<=' => 65]]` | `age <= ?` |
+| Operator `>=` | `['age' => ['>=' => 18]]` | `age >= ?` |
+| Operator `LIKE` | `['name' => ['LIKE' => '%john%']]` | `name LIKE ?` |
+| Operator `NOT LIKE` | `['name' => ['NOT LIKE' => '%test%']]` | `name NOT LIKE ?` |
+| Operator `IN` | `['status' => ['IN' => ['a', 'b']]]` | `status IN ?` |
+| Operator `NOT IN` | `['status' => ['NOT IN' => ['x', 'y']]]` | `status NOT IN ?` |
+| Null via operator | `['deleted_at' => ['=' => null]]` | `deleted_at IS NULL` |
+| Not Null via operator | `['deleted_at' => ['!=' => null]]` | `deleted_at IS NOT NULL` |
 
 ### Relation Filters (Dot-notation)
 
@@ -166,8 +166,8 @@ $posts = $repo->findBy([
 
 // IN lists and operators are supported
 $posts = $repo->findBy([
-    'comments.type' => ['review', 'question'],            // IN (...)
-    'comments.created_at' => ['>=', '2024-01-01 00:00:00'], // operator
+    'comments.type' => ['review', 'question'],               // IN (...)
+    'comments.created_at' => ['>=' => '2024-01-01 00:00:00'], // operator
 ]);
 
 // Null checks
@@ -177,13 +177,13 @@ $posts = $repo->findBy([
 
 // Null checks via operator
 $posts = $repo->findBy([
-    'comments.deleted_at' => ['=', null],   // IS NULL
+    'comments.deleted_at' => ['=' => null],   // IS NULL
 ]);
 
 // Not-null checks via operator
 $posts = $repo->findBy([
-    'comments.deleted_at' => ['!=', null],  // IS NOT NULL
-    // or ['<>', null]
+    'comments.deleted_at' => ['!=' => null],  // IS NOT NULL
+    // or ['<>' => null]
 ]);
 
 // NOT EXISTS: posts that have NO comments with status = 'approved'
@@ -193,7 +193,7 @@ $posts = $repo->findBy([
 
 // NOT EXISTS: posts that have NO comments at all
 $posts = $repo->findBy([
-    '!comments.id' => ['>', 0],  // Any condition with ! prefix creates NOT EXISTS
+    '!comments.id' => ['>' => 0],  // Any condition with ! prefix creates NOT EXISTS
 ]);
 
 // Combining EXISTS and NOT EXISTS
@@ -275,7 +275,7 @@ $repo->forceDelete(1);                       // Physical deletion
 $repo->restore(1);                           // Sets deleted_at = NULL
 
 // Filter by deleted_at column directly
-$deleted = $repo->findBy(['deleted_at' => ['!=', null]]);  // Only soft-deleted
+$deleted = $repo->findBy(['deleted_at' => ['!=' => null]]);  // Only soft-deleted
 $active = $repo->findBy([]);                               // Only active (default)
 $all = $repo->findBy(['deleted_at' => '*']);               // All records (including deleted)
 ```
@@ -484,7 +484,7 @@ class PostRepository extends BaseRepository
 
 // Usage
 $activePosts = $repo->with(['user'])->findAll();                                  // Active posts with users
-$deletedPosts = $repo->with(['user'])->findBy(['deleted_at' => ['!=', null]]);    // Deleted posts with users
+$deletedPosts = $repo->with(['user'])->findBy(['deleted_at' => ['!=' => null]]);    // Deleted posts with users
 $allPosts = $repo->with(['user'])->findBy(['deleted_at' => '*']);                 // All posts with users
 ```
 
@@ -503,7 +503,7 @@ $allPosts = $repo->with(['user'])->findBy(['deleted_at' => '*']);               
 ```php
 // Basic filtering and sorting with pagination
 $users = $repo->findBy(
-    ['status' => 'active', 'age' => ['>', 18]],
+    ['status' => 'active', 'age' => ['>' => 18]],
     ['created_at' => 'DESC'],
     20,  // perPage
     1    // page

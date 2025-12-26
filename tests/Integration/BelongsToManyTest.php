@@ -171,7 +171,7 @@ class BelongsToManyTest extends TestCase
 
         // Find articles with php or javascript tags
         $articles = $this->articleRepository->findBy([
-            'tags.name' => ['IN', ['php', 'javascript']],
+            'tags.name' => ['IN' => ['php', 'javascript']],
         ]);
 
         $this->assertCount(2, $articles);

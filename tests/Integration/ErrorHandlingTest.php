@@ -54,7 +54,7 @@ class ErrorHandlingTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Unsafe operator');
 
-        $this->repository->findBy(['name' => ['DROP', 'value']]);
+        $this->repository->findBy(['name' => ['DROP' => 'value']]);
     }
 
     public function testUpdateNonExistentRecordThrowsException(): void
@@ -86,7 +86,7 @@ class ErrorHandlingTest extends TestCase
         $items = $this->repository->findBy(['name' => 'Test Item']);
         $this->assertCount(1, $items);
 
-        $items = $this->repository->findBy(['price' => ['>=', 50]]);
+        $items = $this->repository->findBy(['price' => ['>=' => 50]]);
         $this->assertCount(1, $items);
     }
 

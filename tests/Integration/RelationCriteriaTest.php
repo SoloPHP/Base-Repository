@@ -169,7 +169,7 @@ class RelationCriteriaTest extends TestCase
 
         // Find articles with php or javascript tags
         $articles = $this->articleRepository->findBy([
-            'tags.name' => ['IN', ['php', 'javascript']],
+            'tags.name' => ['IN' => ['php', 'javascript']],
         ]);
 
         $this->assertCount(2, $articles);
@@ -187,7 +187,7 @@ class RelationCriteriaTest extends TestCase
 
         // Find articles with active tags
         $articles = $this->articleRepository->findBy([
-            'tags.active' => ['=', 1],
+            'tags.active' => ['=' => 1],
         ]);
 
         $this->assertCount(1, $articles);
