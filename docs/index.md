@@ -98,3 +98,4 @@ composer require solophp/base-repository
 ```
 
 **Requirements:** PHP 8.3+, Doctrine DBAL ^4.3
+
