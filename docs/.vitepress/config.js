@@ -3,10 +3,10 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Solo Base Repository',
   description: 'Lightweight PHP repository pattern with soft delete and eager loading.',
-  base: '/base-repository/',
+  base: '/Base-Repository/',
   
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/base-repository/logo.svg' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/Base-Repository/logo.svg' }],
     ['meta', { name: 'theme-color', content: '#06b6d4' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'Solo Base Repository' }],
