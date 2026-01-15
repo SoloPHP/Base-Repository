@@ -67,4 +67,66 @@ class CriteriaBuilderTest extends TestCase
         $this->builder->applyCriteria($qb, ['email' => ['LIKE' => '%@gmail%']]);
         $this->assertStringContainsString('LIKE :email', $qb->getSQL());
     }
+
+    public function testApplyCriteriaWithBetweenOperator(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['price' => ['BETWEEN' => [100, 500]]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('t.price BETWEEN :price_min AND :price_max', $sql);
+        $this->assertEquals(100, $qb->getParameter('price_min'));
+        $this->assertEquals(500, $qb->getParameter('price_max'));
+    }
+
+    public function testApplyCriteriaWithBetweenOperatorLowercase(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['age' => ['between' => [18, 65]]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('BETWEEN', $sql);
+        $this->assertEquals(18, $qb->getParameter('age_min'));
+        $this->assertEquals(65, $qb->getParameter('age_max'));
+    }
+
+    public function testApplyCriteriaWithBetweenOperatorDates(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, [
+            'created_at' => ['BETWEEN' => ['2024-01-01', '2024-12-31']]
+        ]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('BETWEEN', $sql);
+        $this->assertEquals('2024-01-01', $qb->getParameter('created_at_min'));
+        $this->assertEquals('2024-12-31', $qb->getParameter('created_at_max'));
+    }
+
+    public function testApplyCriteriaWithBetweenOperatorInvalidArrayThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('BETWEEN requires array of exactly 2 values');
+
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['price' => ['BETWEEN' => [100]]]);
+    }
+
+    public function testApplyCriteriaWithBetweenOperatorTooManyValuesThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('BETWEEN requires array of exactly 2 values');
+
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['price' => ['BETWEEN' => [100, 200, 300]]]);
+    }
+
+    public function testApplyCriteriaWithBetweenOperatorNonArrayThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('BETWEEN requires array of exactly 2 values');
+
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['price' => ['BETWEEN' => 100]]);
+    }
 }

@@ -250,6 +250,71 @@ class BaseRepositoryTest extends TestCase
         $this->assertCount(2, $postRepo->findBy(['views' => ['>=' => 10]]));
     }
 
+    public function testFindByWithBetweenOperator(): void
+    {
+        $this->connection->executeStatement('
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(255) NOT NULL,
+                price DECIMAL(10,2) NOT NULL
+            )
+        ');
+
+        $productRepo = new TestProductRepository($this->connection);
+        $productRepo->create(['name' => 'Cheap', 'price' => 10.00]);
+        $productRepo->create(['name' => 'Medium', 'price' => 50.00]);
+        $productRepo->create(['name' => 'Expensive', 'price' => 100.00]);
+        $productRepo->create(['name' => 'Premium', 'price' => 200.00]);
+
+        // Test BETWEEN with integers
+        $products = $productRepo->findBy(['price' => ['BETWEEN' => [40, 110]]]);
+        $this->assertCount(2, $products);
+
+        // Verify correct products returned
+        $names = array_map(fn($p) => $p->name, $products);
+        $this->assertContains('Medium', $names);
+        $this->assertContains('Expensive', $names);
+    }
+
+    public function testFindByWithBetweenOperatorInclusive(): void
+    {
+        $this->connection->executeStatement('
+            CREATE TABLE IF NOT EXISTS items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quantity INTEGER NOT NULL
+            )
+        ');
+
+        $itemRepo = new TestItemRepository($this->connection);
+        $itemRepo->create(['quantity' => 5]);
+        $itemRepo->create(['quantity' => 10]);
+        $itemRepo->create(['quantity' => 15]);
+        $itemRepo->create(['quantity' => 20]);
+
+        // BETWEEN is inclusive
+        $items = $itemRepo->findBy(['quantity' => ['BETWEEN' => [10, 15]]]);
+        $this->assertCount(2, $items);
+    }
+
+    public function testCountWithBetweenOperator(): void
+    {
+        $this->connection->executeStatement('
+            CREATE TABLE IF NOT EXISTS scores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                value INTEGER NOT NULL
+            )
+        ');
+
+        $scoreRepo = new TestScoreRepository($this->connection);
+        $scoreRepo->create(['value' => 50]);
+        $scoreRepo->create(['value' => 75]);
+        $scoreRepo->create(['value' => 100]);
+        $scoreRepo->create(['value' => 150]);
+
+        $count = $scoreRepo->count(['value' => ['BETWEEN' => [60, 120]]]);
+        $this->assertEquals(2, $count);
+    }
+
     public function testTransactions(): void
     {
         // Basic transaction methods
@@ -376,5 +441,88 @@ class TestPostRepository extends BaseRepository
     public function __construct(\Doctrine\DBAL\Connection $connection)
     {
         parent::__construct($connection, TestPost::class, 'posts');
+    }
+}
+
+// Test product model
+class TestProduct
+{
+    public function __construct(
+        public int $id,
+        public string $name,
+        public float $price
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            $data['name'],
+            (float) $data['price']
+        );
+    }
+}
+
+// Test product repository
+class TestProductRepository extends BaseRepository
+{
+    public function __construct(\Doctrine\DBAL\Connection $connection)
+    {
+        parent::__construct($connection, TestProduct::class, 'products');
+    }
+}
+
+// Test item model
+class TestItem
+{
+    public function __construct(
+        public int $id,
+        public int $quantity
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            (int) $data['quantity']
+        );
+    }
+}
+
+// Test item repository
+class TestItemRepository extends BaseRepository
+{
+    public function __construct(\Doctrine\DBAL\Connection $connection)
+    {
+        parent::__construct($connection, TestItem::class, 'items');
+    }
+}
+
+// Test score model
+class TestScore
+{
+    public function __construct(
+        public int $id,
+        public int $value
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            (int) $data['value']
+        );
+    }
+}
+
+// Test score repository
+class TestScoreRepository extends BaseRepository
+{
+    public function __construct(\Doctrine\DBAL\Connection $connection)
+    {
+        parent::__construct($connection, TestScore::class, 'scores');
     }
 }

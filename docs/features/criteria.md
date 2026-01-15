@@ -101,6 +101,23 @@ $repo->findBy(['status' => ['IN' => ['active', 'pending']]]);
 $repo->findBy(['status' => ['NOT IN' => ['deleted', 'banned']]]);
 ```
 
+### BETWEEN Operator
+
+```php
+// WHERE price BETWEEN 100 AND 500
+$repo->findBy(['price' => ['BETWEEN' => [100, 500]]]);
+
+// WHERE age BETWEEN 18 AND 65
+$repo->findBy(['age' => ['BETWEEN' => [18, 65]]]);
+
+// Works with dates too
+$repo->findBy(['created_at' => ['BETWEEN' => ['2024-01-01', '2024-12-31']]]);
+```
+
+::: tip
+BETWEEN is inclusive on both ends. `['BETWEEN' => [10, 20]]` matches 10, 15, and 20.
+:::
+
 ---
 
 ## Complete Reference
@@ -121,6 +138,7 @@ $repo->findBy(['status' => ['NOT IN' => ['deleted', 'banned']]]);
 | `NOT LIKE` | `['name' => ['NOT LIKE' => '%test%']]` | `name NOT LIKE ?` |
 | `IN` | `['status' => ['IN' => ['a', 'b']]]` | `status IN (?, ?)` |
 | `NOT IN` | `['status' => ['NOT IN' => ['x']]]` | `status NOT IN (?)` |
+| `BETWEEN` | `['price' => ['BETWEEN' => [100, 500]]]` | `price BETWEEN ? AND ?` |
 | IS NULL | `['deleted_at' => ['=' => null]]` | `deleted_at IS NULL` |
 | IS NOT NULL | `['deleted_at' => ['!=' => null]]` | `deleted_at IS NOT NULL` |
 

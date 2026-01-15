@@ -175,34 +175,13 @@ final class ProductRepository extends BaseRepository
     }
 
     /**
-     * Products in price range
+     * Products in price range using BETWEEN
      */
     public function inPriceRange(float $min, float $max): array
     {
         return $this->findBy([
-            'price' => ['>=' => $min],
-            'price' => ['<=' => $max],  // Note: this overwrites!
+            'price' => ['BETWEEN' => [$min, $max]]
         ]);
-    }
-
-    /**
-     * Better: complex price range query
-     */
-    public function findInPriceRange(float $min, float $max): array
-    {
-        $rows = $this->table()
-            ->andWhere('price >= :min')
-            ->andWhere('price <= :max')
-            ->setParameter('min', $min)
-            ->setParameter('max', $max)
-            ->orderBy('price', 'ASC')
-            ->executeQuery()
-            ->fetchAllAssociative();
-
-        return array_map(
-            fn(array $row) => $this->mapRowToModel($row),
-            $rows
-        );
     }
 }
 ```

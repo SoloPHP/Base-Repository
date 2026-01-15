@@ -12,7 +12,7 @@ use Doctrine\DBAL\ArrayParameterType;
  */
 final readonly class CriteriaBuilder
 {
-    private const array ALLOWED_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
+    private const array ALLOWED_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'BETWEEN'];
 
     /**
      * @param non-empty-string $tableAlias
@@ -71,6 +71,16 @@ final readonly class CriteriaBuilder
                         : $qb->expr()->notIn($quotedField, ':' . $field);
                     $qb->andWhere($expr);
                     $qb->setParameter($field, $val, $this->determineArrayParamType($val));
+                    continue;
+                }
+
+                if ($upperOp === 'BETWEEN') {
+                    if (!is_array($val) || count($val) !== 2) {
+                        throw new \InvalidArgumentException("BETWEEN requires array of exactly 2 values");
+                    }
+                    $qb->andWhere("{$quotedField} BETWEEN :{$field}_min AND :{$field}_max");
+                    $qb->setParameter("{$field}_min", $val[0]);
+                    $qb->setParameter("{$field}_max", $val[1]);
                     continue;
                 }
 
