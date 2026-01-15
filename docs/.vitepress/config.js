@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'Solo Base Repository',
-  description: 'Lightweight PHP repository pattern with soft delete and eager loading',
+  description: 'Lightweight PHP repository pattern with soft delete and eager loading.',
   base: '/base-repository/',
   
   head: [
