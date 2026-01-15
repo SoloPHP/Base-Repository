@@ -1,0 +1,13 @@
+{
+  "name": "solo-base-repository-docs",
+  "version": "1.0.0",
+  "description": "Documentation for Solo Base Repository",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.5.0"
+  }
+}
