@@ -39,17 +39,16 @@ $users = $repo->findBy(['status' => 'active'], ['created_at' => 'DESC'], 20, 1);
 $repo->delete($id);      // Soft delete
 $repo->restore($id);     // Restore
 ```
-
 ## Documentation
 
-📖 **[Full Documentation](https://solophp.github.io/base-repository/)**
+📖 **[Full Documentation](https://solophp.github.io/Base-Repository/)**
 
-- [Installation](https://solophp.github.io/base-repository/guide/installation)
-- [Quick Start](https://solophp.github.io/base-repository/guide/quick-start)
-- [Criteria Syntax](https://solophp.github.io/base-repository/features/criteria)
-- [Soft Delete](https://solophp.github.io/base-repository/features/soft-delete)
-- [Eager Loading](https://solophp.github.io/base-repository/features/eager-loading)
-- [API Reference](https://solophp.github.io/base-repository/methods/retrieval)
+- [Installation](https://solophp.github.io/Base-Repository/guide/installation)
+- [Quick Start](https://solophp.github.io/Base-Repository/guide/quick-start)
+- [Criteria Syntax](https://solophp.github.io/Base-Repository/features/criteria)
+- [Soft Delete](https://solophp.github.io/Base-Repository/features/soft-delete)
+- [Eager Loading](https://solophp.github.io/Base-Repository/features/eager-loading)
+- [API Reference](https://solophp.github.io/Base-Repository/methods/retrieval)
 
 ## License
 
