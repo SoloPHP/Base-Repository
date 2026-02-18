@@ -1,6 +1,5 @@
 !.gitignore
 /vendor/
-/phpunit.xml
 .phpunit.result.cache
 /.phpunit.cache/
 /coverage/
