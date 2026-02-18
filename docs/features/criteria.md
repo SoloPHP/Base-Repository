@@ -240,7 +240,7 @@ See [Soft Delete](/features/soft-delete) for more details.
 
 All identifiers and operators are validated:
 
-- Column names must match `/^[A-Za-z_][A-Za-z0-9_]*$/`
+- Column names must match `/^[A-Za-z_][A-Za-z0-9_.]*$/`
 - Only allowed operators are accepted
 - All values are bound as parameters (no SQL injection)
 

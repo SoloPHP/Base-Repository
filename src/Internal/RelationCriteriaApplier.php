@@ -13,7 +13,10 @@ use Doctrine\DBAL\Query\QueryBuilder;
  */
 final readonly class RelationCriteriaApplier
 {
-    private const array ALLOWED_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
+    private const array ALLOWED_OPERATORS = [
+        '=', '!=', '<>', '<', '>', '<=', '>=',
+        'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'BETWEEN',
+    ];
 
     public function __construct(private Connection $connection)
     {
@@ -154,6 +157,16 @@ final readonly class RelationCriteriaApplier
                             : $sub->expr()->notIn("{$alias}.{$field}", ':' . $paramName);
                         $sub->andWhere($expr);
                         $qb->setParameter($paramName, $value, $this->determineArrayParamType($value));
+                        continue;
+                    }
+
+                    if ($upperOp === 'BETWEEN') {
+                        if (!is_array($value) || count($value) !== 2) {
+                            throw new \InvalidArgumentException("BETWEEN requires array of exactly 2 values");
+                        }
+                        $sub->andWhere("{$alias}.{$field} BETWEEN :{$paramName}_min AND :{$paramName}_max");
+                        $qb->setParameter("{$paramName}_min", $value[0]);
+                        $qb->setParameter("{$paramName}_max", $value[1]);
                         continue;
                     }
 

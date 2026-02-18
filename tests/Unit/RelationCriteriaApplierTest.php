@@ -105,6 +105,29 @@ class RelationCriteriaApplierTest extends TestCase
         $this->assertStringContainsString('IN', $qb6->getSQL());
     }
 
+    public function testApplyWithBetweenOperator(): void
+    {
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), [
+            'comments' => ['rating' => ['BETWEEN' => [3, 5]]]
+        ]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('BETWEEN', $sql);
+        $this->assertStringContainsString('EXISTS', $sql);
+    }
+
+    public function testApplyWithBetweenOperatorInvalidArrayThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('BETWEEN requires array of exactly 2 values');
+
+        $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');
+        $this->applier->apply($qb, 'p', 'id', $this->getCompiledRelations(), [
+            'comments' => ['rating' => ['BETWEEN' => [3]]]
+        ]);
+    }
+
     public function testApplyThrowsExceptionForUnsafeOperator(): void
     {
         $qb = $this->connection->createQueryBuilder()->select('*')->from('posts', 'p');

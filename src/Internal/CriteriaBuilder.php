@@ -12,7 +12,10 @@ use Doctrine\DBAL\ArrayParameterType;
  */
 final readonly class CriteriaBuilder
 {
-    private const array ALLOWED_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'BETWEEN'];
+    private const array ALLOWED_OPERATORS = [
+        '=', '!=', '<>', '<', '>', '<=', '>=',
+        'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'BETWEEN',
+    ];
 
     /**
      * @param non-empty-string $tableAlias
@@ -30,7 +33,9 @@ final readonly class CriteriaBuilder
     {
         foreach ($criteria as $field => $value) {
             $this->assertSafeIdentifier($field);
-            $quotedField = $useAlias ? "{$this->tableAlias}.{$field}" : $field;
+            $isQualified = str_contains($field, '.');
+            $quotedField = ($useAlias && !$isQualified) ? "{$this->tableAlias}.{$field}" : $field;
+            $paramName = $isQualified ? str_replace('.', '_', $field) : $field;
 
             if ($value === null) {
                 $qb->andWhere("{$quotedField} IS NULL");
@@ -40,8 +45,8 @@ final readonly class CriteriaBuilder
             if (is_array($value)) {
                 if (array_is_list($value)) {
                     // Sequential array = IN list: ['active', 'pending']
-                    $qb->andWhere($qb->expr()->in($quotedField, ':' . $field));
-                    $qb->setParameter($field, $value, $this->determineArrayParamType($value));
+                    $qb->andWhere($qb->expr()->in($quotedField, ':' . $paramName));
+                    $qb->setParameter($paramName, $value, $this->determineArrayParamType($value));
                     continue;
                 }
 
@@ -67,10 +72,10 @@ final readonly class CriteriaBuilder
                         $val = [$val];
                     }
                     $expr = $upperOp === 'IN'
-                        ? $qb->expr()->in($quotedField, ':' . $field)
-                        : $qb->expr()->notIn($quotedField, ':' . $field);
+                        ? $qb->expr()->in($quotedField, ':' . $paramName)
+                        : $qb->expr()->notIn($quotedField, ':' . $paramName);
                     $qb->andWhere($expr);
-                    $qb->setParameter($field, $val, $this->determineArrayParamType($val));
+                    $qb->setParameter($paramName, $val, $this->determineArrayParamType($val));
                     continue;
                 }
 
@@ -78,19 +83,19 @@ final readonly class CriteriaBuilder
                     if (!is_array($val) || count($val) !== 2) {
                         throw new \InvalidArgumentException("BETWEEN requires array of exactly 2 values");
                     }
-                    $qb->andWhere("{$quotedField} BETWEEN :{$field}_min AND :{$field}_max");
-                    $qb->setParameter("{$field}_min", $val[0]);
-                    $qb->setParameter("{$field}_max", $val[1]);
+                    $qb->andWhere("{$quotedField} BETWEEN :{$paramName}_min AND :{$paramName}_max");
+                    $qb->setParameter("{$paramName}_min", $val[0]);
+                    $qb->setParameter("{$paramName}_max", $val[1]);
                     continue;
                 }
 
-                $qb->andWhere("{$quotedField} {$operator} :{$field}");
-                $qb->setParameter($field, $val);
+                $qb->andWhere("{$quotedField} {$operator} :{$paramName}");
+                $qb->setParameter($paramName, $val);
                 continue;
             }
 
-            $qb->andWhere("{$quotedField} = :{$field}");
-            $qb->setParameter($field, $value);
+            $qb->andWhere("{$quotedField} = :{$paramName}");
+            $qb->setParameter($paramName, $value);
         }
 
         return $qb;
@@ -103,7 +108,7 @@ final readonly class CriteriaBuilder
     {
         foreach ($orderBy as $field => $direction) {
             $this->assertSafeIdentifier($field);
-            $quotedField = "{$this->tableAlias}.{$field}";
+            $quotedField = str_contains($field, '.') ? $field : "{$this->tableAlias}.{$field}";
             $dir = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
             $qb->orderBy($quotedField, $dir);
         }
@@ -114,7 +119,7 @@ final readonly class CriteriaBuilder
      */
     private function assertSafeIdentifier(string $identifier): void
     {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $identifier)) {
             throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
         }
     }

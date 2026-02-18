@@ -129,4 +129,66 @@ class CriteriaBuilderTest extends TestCase
         $qb = $this->createQueryBuilder();
         $this->builder->applyCriteria($qb, ['price' => ['BETWEEN' => 100]]);
     }
+
+    public function testApplyCriteriaWithQualifiedFieldDoesNotDoubleAlias(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['p.status' => 'active']);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('p.status = :p_status', $sql);
+        $this->assertStringNotContainsString('t.p.status', $sql);
+    }
+
+    public function testApplyCriteriaWithQualifiedFieldInList(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['p.status' => ['active', 'pending']]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('p.status', $sql);
+        $this->assertStringContainsString(':p_status', $sql);
+        $this->assertStringNotContainsString('t.p.status', $sql);
+    }
+
+    public function testApplyCriteriaWithQualifiedFieldOperator(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['p.age' => ['>=' => 18]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('p.age >= :p_age', $sql);
+        $this->assertStringNotContainsString('t.p.age', $sql);
+    }
+
+    public function testApplyCriteriaWithQualifiedFieldBetween(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['p.price' => ['BETWEEN' => [100, 500]]]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('p.price BETWEEN :p_price_min AND :p_price_max', $sql);
+        $this->assertEquals(100, $qb->getParameter('p_price_min'));
+        $this->assertEquals(500, $qb->getParameter('p_price_max'));
+    }
+
+    public function testApplyCriteriaWithQualifiedFieldNull(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['p.deleted_at' => null]);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('p.deleted_at IS NULL', $sql);
+        $this->assertStringNotContainsString('t.p.deleted_at', $sql);
+    }
+
+    public function testApplyOrderByWithQualifiedField(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyOrderBy($qb, ['p.created_at' => 'DESC']);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('p.created_at DESC', $sql);
+        $this->assertStringNotContainsString('t.p.created_at', $sql);
+    }
 }
