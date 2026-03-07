@@ -604,6 +604,35 @@ abstract class BaseRepository implements RepositoryInterface
         }
     }
 
+    // Locking methods
+
+    /**
+     * Lock row(s) by primary key with SELECT ... FOR UPDATE.
+     * Must be called inside a transaction.
+     *
+     * @param int|string|array<int|string> $id Single ID or array of IDs
+     */
+    public function lockForUpdate(int|string|array $id): void
+    {
+        $this->assertSafeIdentifier($this->primaryKey);
+
+        if (is_array($id)) {
+            if (empty($id)) {
+                return;
+            }
+            $placeholders = implode(',', array_fill(0, count($id), '?'));
+            $this->connection->fetchAllAssociative(
+                "SELECT {$this->primaryKey} FROM {$this->table} WHERE {$this->primaryKey} IN ({$placeholders}) FOR UPDATE",
+                array_values($id)
+            );
+        } else {
+            $this->connection->fetchOne(
+                "SELECT {$this->primaryKey} FROM {$this->table} WHERE {$this->primaryKey} = ? FOR UPDATE",
+                [$id]
+            );
+        }
+    }
+
     // Soft delete methods
 
     /**

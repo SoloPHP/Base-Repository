@@ -8,12 +8,12 @@ Lightweight PHP repository pattern with built-in soft delete, eager loading, and
 
 ## Features
 
-- 🗑️ Soft delete with restore/force delete
-- 🔗 Eager loading (BelongsTo, HasOne, HasMany, BelongsToMany)
-- 🔍 Rich criteria syntax with operators and relation filters
-- 📊 Built-in aggregations (count, sum, avg, min, max)
-- 🔐 Transaction helpers
-- 🆔 Auto-detect custom IDs (UUID, prefixed)
+- Soft delete with restore/force delete
+- Eager loading (BelongsTo, HasOne, HasMany, BelongsToMany)
+- Rich criteria syntax with operators and relation filters
+- Built-in aggregations (count, sum, avg, min, max)
+- Transaction helpers with row locking (SELECT ... FOR UPDATE)
+- Auto-detect custom IDs (UUID, prefixed)
 
 ## Installation
 ```bash

@@ -154,6 +154,56 @@ try {
 
 ---
 
+## lockForUpdate()
+
+Lock one or more rows by primary key using `SELECT ... FOR UPDATE`. Must be called inside a transaction.
+
+```php
+public function lockForUpdate(int|string|array $id): void
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$id` | `int\|string\|array` | Single ID or array of IDs to lock |
+
+**Behavior:**
+- Executes `SELECT pk FROM table WHERE pk = ? FOR UPDATE`
+- For arrays, uses `WHERE pk IN (...)`
+- Empty array is a no-op
+- Must be called within an active transaction
+
+**Example:**
+
+```php
+// Lock a single row
+$repo->withTransaction(function ($repo) use ($userId) {
+    $repo->lockForUpdate($userId);
+
+    $user = $repo->find($userId);
+    $repo->update($userId, [
+        'balance' => $user->balance - 100
+    ]);
+});
+
+// Lock multiple rows
+$repo->withTransaction(function ($repo) use ($ids) {
+    $repo->lockForUpdate($ids);
+
+    $repo->updateBy(
+        ['id' => $ids],
+        ['status' => 'processing']
+    );
+});
+```
+
+::: warning Database Support
+`SELECT ... FOR UPDATE` is supported by MySQL/MariaDB, PostgreSQL, and Oracle. SQLite does not support row-level locking.
+:::
+
+---
+
 ## Cross-Repository Transactions
 
 All repositories share the same connection, so transactions work across them:

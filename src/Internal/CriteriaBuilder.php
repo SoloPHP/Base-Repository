@@ -110,7 +110,7 @@ final readonly class CriteriaBuilder
             $this->assertSafeIdentifier($field);
             $quotedField = str_contains($field, '.') ? $field : "{$this->tableAlias}.{$field}";
             $dir = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
-            $qb->orderBy($quotedField, $dir);
+            $qb->addOrderBy($quotedField, $dir);
         }
     }
 

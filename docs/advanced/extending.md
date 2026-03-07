@@ -2,6 +2,28 @@
 
 Add domain-specific methods to your repositories for cleaner application code.
 
+## Public Utility Methods
+
+These methods are available on any repository instance:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getTableName()` | `string` | The database table name |
+| `getPrimaryKeyName()` | `string` | The primary key column name |
+| `getConnection()` | `Connection` | The Doctrine DBAL connection instance |
+| `mapToModel(array $row)` | `TModel` | Converts a database row array to a model instance |
+
+```php
+// Access connection for raw queries
+$conn = $repo->getConnection();
+
+// Map a raw row to a model
+$row = $conn->fetchAssociative('SELECT * FROM users WHERE id = ?', [1]);
+$user = $repo->mapToModel($row);
+```
+
+---
+
 ## Protected Methods
 
 These methods are available for use in your repository subclasses:

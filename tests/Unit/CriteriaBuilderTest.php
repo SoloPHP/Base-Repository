@@ -182,6 +182,16 @@ class CriteriaBuilderTest extends TestCase
         $this->assertStringNotContainsString('t.p.deleted_at', $sql);
     }
 
+    public function testApplyOrderByMultipleColumns(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyOrderBy($qb, ['name' => 'ASC', 'created_at' => 'DESC']);
+
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('t.name ASC', $sql);
+        $this->assertStringContainsString('t.created_at DESC', $sql);
+    }
+
     public function testApplyOrderByWithQualifiedField(): void
     {
         $qb = $this->createQueryBuilder();

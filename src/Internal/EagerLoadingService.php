@@ -10,6 +10,9 @@ use Solo\BaseRepository\Relation\BelongsToMany;
 use Solo\BaseRepository\Relation\HasMany;
 use Solo\BaseRepository\Relation\HasOne;
 
+/**
+ * @internal
+ */
 final class EagerLoadingService
 {
     private array $eagerLoad = [];

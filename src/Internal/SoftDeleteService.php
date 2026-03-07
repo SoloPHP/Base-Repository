@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Internal;
 
+/**
+ * @internal
+ */
 final readonly class SoftDeleteService
 {
     public function __construct(

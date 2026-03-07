@@ -102,6 +102,22 @@ class BaseRepositoryTest extends TestCase
         $this->assertEquals('B User', $users[1]->name);
     }
 
+    public function testFindByWithMultiColumnOrderBy(): void
+    {
+        $this->repository->create(['name' => 'Alice', 'email' => 'alice@example.com', 'status' => 'active']);
+        $this->repository->create(['name' => 'Bob', 'email' => 'bob@example.com', 'status' => 'inactive']);
+        $this->repository->create(['name' => 'Charlie', 'email' => 'charlie@example.com', 'status' => 'active']);
+
+        // Sort by status ASC, then name DESC
+        $users = $this->repository->findBy([], ['status' => 'ASC', 'name' => 'DESC']);
+
+        $this->assertCount(3, $users);
+        // 'active' first (ASC), then within 'active' by name DESC
+        $this->assertEquals('Charlie', $users[0]->name);
+        $this->assertEquals('Alice', $users[1]->name);
+        $this->assertEquals('Bob', $users[2]->name);
+    }
+
     public function testFindByWithPagination(): void
     {
         for ($i = 1; $i <= 5; $i++) {

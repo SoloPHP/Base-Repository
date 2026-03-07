@@ -146,6 +146,14 @@ interface RepositoryInterface
     public function with(array $relations): static;
 
     /**
+     * Lock row(s) by primary key with SELECT ... FOR UPDATE.
+     * Must be called inside a transaction.
+     *
+     * @param int|string|array<int|string> $id Single ID or array of IDs
+     */
+    public function lockForUpdate(int|string|array $id): void;
+
+    /**
      * @return bool
      */
     public function beginTransaction(): bool;
