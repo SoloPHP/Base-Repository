@@ -146,6 +146,22 @@ interface RepositoryInterface
     public function with(array $relations): static;
 
     /**
+     * Set locale for translation JOIN.
+     * The next query will LEFT JOIN the translation table and include translated fields.
+     *
+     * @param string $locale
+     * @return static
+     */
+    public function withLocale(string $locale): static;
+
+    /**
+     * Clear locale (disable translation JOIN)
+     *
+     * @return static
+     */
+    public function withoutLocale(): static;
+
+    /**
      * Lock row(s) by primary key with SELECT ... FOR UPDATE.
      * Must be called inside a transaction.
      *

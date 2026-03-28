@@ -53,7 +53,8 @@ export default defineConfig({
         items: [
           { text: 'Criteria Syntax', link: '/features/criteria' },
           { text: 'Soft Delete', link: '/features/soft-delete' },
-          { text: 'Eager Loading', link: '/features/eager-loading' }
+          { text: 'Eager Loading', link: '/features/eager-loading' },
+          { text: 'Translations', link: '/features/translations' }
         ]
       },
       {

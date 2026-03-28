@@ -32,6 +32,9 @@ features:
   - icon: 🔐
     title: Transactions
     details: withTransaction() helper for clean transactional code with automatic commit/rollback.
+  - icon: 🌐
+    title: Translations
+    details: Automatic LEFT JOIN with translation tables via withLocale(). One-shot modifier, same pattern as with().
   - icon: 🆔
     title: Custom IDs
     details: Auto-detect custom IDs (UUIDs, prefixed IDs). Just pass your ID in create() — no configuration needed.

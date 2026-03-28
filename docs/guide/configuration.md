@@ -49,6 +49,7 @@ class UserRepository extends BaseRepository
 | `$tableAlias` | `?string` | `null` | Table alias for queries (defaults to first letter of table name) |
 | `$deletedAtColumn` | `?string` | `null` | Column for soft delete timestamp. Set to enable soft delete |
 | `$relationConfig` | `array` | `[]` | Relation definitions for eager loading |
+| `$translationConfig` | `?array` | `null` | Translation table config. Set to enable `withLocale()` |
 
 ## Feature Auto-Detection
 
@@ -56,6 +57,7 @@ Features are automatically enabled based on your configuration:
 
 - **Soft Delete** — Enabled when `$deletedAtColumn` is set
 - **Eager Loading** — Enabled when `$relationConfig` is non-empty
+- **Translations** — Enabled when `$translationConfig` is set
 - **Custom IDs** — Auto-detected when you provide ID in `create()` data
 
 ## Minimal Repository

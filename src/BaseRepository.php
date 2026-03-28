@@ -12,6 +12,7 @@ use Solo\BaseRepository\Internal\CriteriaBuilder;
 use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\EagerLoadingService;
 use Solo\BaseRepository\Internal\RelationCriteriaApplier;
+use Solo\BaseRepository\Internal\TranslationService;
 use Solo\BaseRepository\Relation\RelationType;
 use Solo\BaseRepository\Relation\BelongsTo;
 use Solo\BaseRepository\Relation\BelongsToMany;
@@ -32,11 +33,27 @@ abstract class BaseRepository implements RepositoryInterface
 
     protected ?SoftDeleteService $softDeleteService = null;
     protected ?EagerLoadingService $eagerLoadingService = null;
+    protected ?TranslationService $translationService = null;
 
     // Configuration properties - override in child classes
     protected ?string $deletedAtColumn = null;
     /** @var array<string, RelationType|mixed> */
     protected array $relationConfig = [];
+
+    /**
+     * Translation table config - override in child classes.
+     * Set to enable automatic LEFT JOIN with translation table when locale is set.
+     *
+     * Example:
+     *   protected ?array $translationConfig = [
+     *       'table' => 'product_translations',
+     *       'foreignKey' => 'product_id',
+     *       'fields' => ['name', 'description', 'h1', 'meta_title', 'meta_description'],
+     *   ];
+     *
+     * @var array{table: string, foreignKey: string, fields: list<string>}|null
+     */
+    protected ?array $translationConfig = null;
 
     /**
      * @param Connection $connection
@@ -69,6 +86,15 @@ abstract class BaseRepository implements RepositoryInterface
         if ($this->deletedAtColumn !== null) {
             $this->softDeleteService = new SoftDeleteService($this->deletedAtColumn);
         }
+
+        // Initialize translation service if config is defined
+        if ($this->translationConfig !== null) {
+            $this->translationService = new TranslationService(
+                $this->translationConfig['table'],
+                $this->translationConfig['foreignKey'],
+                $this->translationConfig['fields'],
+            );
+        }
     }
 
     /**
@@ -89,7 +115,37 @@ abstract class BaseRepository implements RepositoryInterface
 
     protected function table(): QueryBuilder
     {
-        return $this->queryFactory->tableSelectAll();
+        $qb = $this->queryFactory->tableSelectAll();
+
+        if ($this->translationService !== null && $this->translationService->hasLocale()) {
+            $this->translationService->applyJoin($qb, $this->getTableAlias(), $this->primaryKey);
+            $this->translationService->reset();
+        }
+
+        return $qb;
+    }
+
+    /**
+     * Set locale for translation JOIN.
+     * When set, the next query will LEFT JOIN the translation table and include translated fields.
+     *
+     * Usage: $repo->withLocale('uk')->findBy($criteria)
+     */
+    public function withLocale(string $locale): static
+    {
+        if ($this->translationService !== null) {
+            $this->translationService->setLocale($locale);
+        }
+        return $this;
+    }
+
+    /**
+     * Clear locale (disable translation JOIN)
+     */
+    public function withoutLocale(): static
+    {
+        $this->translationService?->reset();
+        return $this;
     }
 
     /**
@@ -621,10 +677,9 @@ abstract class BaseRepository implements RepositoryInterface
                 return;
             }
             $placeholders = implode(',', array_fill(0, count($id), '?'));
-            $this->connection->fetchAllAssociative(
-                "SELECT {$this->primaryKey} FROM {$this->table} WHERE {$this->primaryKey} IN ({$placeholders}) FOR UPDATE",
-                array_values($id)
-            );
+            $sql = "SELECT {$this->primaryKey} FROM {$this->table}"
+                . " WHERE {$this->primaryKey} IN ({$placeholders}) FOR UPDATE";
+            $this->connection->fetchAllAssociative($sql, array_values($id));
         } else {
             $this->connection->fetchOne(
                 "SELECT {$this->primaryKey} FROM {$this->table} WHERE {$this->primaryKey} = ? FOR UPDATE",

@@ -12,6 +12,7 @@ Lightweight PHP repository pattern with built-in soft delete, eager loading, and
 - Eager loading (BelongsTo, HasOne, HasMany, BelongsToMany)
 - Rich criteria syntax with operators and relation filters
 - Built-in aggregations (count, sum, avg, min, max)
+- Translation support with automatic LEFT JOIN via `withLocale()`
 - Transaction helpers with row locking (SELECT ... FOR UPDATE)
 - Auto-detect custom IDs (UUID, prefixed)
 
@@ -48,6 +49,7 @@ $repo->restore($id);     // Restore
 - [Criteria Syntax](https://solophp.github.io/Base-Repository/features/criteria)
 - [Soft Delete](https://solophp.github.io/Base-Repository/features/soft-delete)
 - [Eager Loading](https://solophp.github.io/Base-Repository/features/eager-loading)
+- [Translations](https://solophp.github.io/Base-Repository/features/translations)
 - [API Reference](https://solophp.github.io/Base-Repository/methods/retrieval)
 
 ## License
