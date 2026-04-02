@@ -16,6 +16,7 @@ use Solo\BaseRepository\Relation\HasOne;
 final class EagerLoadingService
 {
     private array $eagerLoad = [];
+    private ?string $locale = null;
 
     /**
      * Set relations to eager load
@@ -23,6 +24,14 @@ final class EagerLoadingService
     public function setRelations(array $relations): void
     {
         $this->eagerLoad = $relations;
+    }
+
+    /**
+     * Set locale to propagate to related repositories
+     */
+    public function setLocale(?string $locale): void
+    {
+        $this->locale = $locale;
     }
 
     /**
@@ -59,6 +68,7 @@ final class EagerLoadingService
     public function reset(): void
     {
         $this->eagerLoad = [];
+        $this->locale = null;
     }
 
     /**
@@ -81,6 +91,11 @@ final class EagerLoadingService
         $relatedRepository = $repository->{$config->getRepository()};
         $parentPrimaryKey = $repository->getPrimaryKeyName();
         $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
+
+        // Propagate locale to related repository for translation support
+        if ($this->locale !== null && method_exists($relatedRepository, 'withLocale')) {
+            $relatedRepository->withLocale($this->locale);
+        }
 
         // If nested relations are requested, configure them on the related repository
         if (!empty($nested) && method_exists($relatedRepository, 'with')) {
@@ -124,7 +139,9 @@ final class EagerLoadingService
     }
 
     /**
-     * Load belongsToMany relations via pivot table using single JOIN query
+     * Load belongsToMany relations via pivot table.
+     * Uses two queries: pivot rows + findBy() on related repository
+     * (supports translations, scopes, and other repository features).
      */
     private function loadBelongsToMany(
         array $items,
@@ -139,7 +156,6 @@ final class EagerLoadingService
         string $parentPrimaryKey
     ): void {
         $connection = $parentRepository->getConnection();
-        $relatedTable = $relatedRepository->getTableName();
         $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
 
         // Determine parameter type based on ID type
@@ -147,34 +163,54 @@ final class EagerLoadingService
             ? \Doctrine\DBAL\ArrayParameterType::INTEGER
             : \Doctrine\DBAL\ArrayParameterType::STRING;
 
-        // Single JOIN query: pivot + related table
-        $qb = $connection->createQueryBuilder()
-            ->select("p.{$foreignPivotKey}", 'r.*')
-            ->from($pivotTable, 'p')
-            ->innerJoin('p', $relatedTable, 'r', "r.{$relatedPrimaryKey} = p.{$relatedPivotKey}")
-            ->where("p.{$foreignPivotKey} IN (:ids)")
-            ->setParameter('ids', $parentIds, $paramType);
+        // Step 1: Get pivot rows (parent_id → related_id mapping)
+        $pivotRows = $connection->fetchAllAssociative(
+            "SELECT {$foreignPivotKey}, {$relatedPivotKey} FROM {$pivotTable} WHERE {$foreignPivotKey} IN (?)",
+            [$parentIds],
+            [$paramType]
+        );
 
-        // Apply sorting
-        foreach ($sort as $column => $direction) {
-            $qb->addOrderBy("r.{$column}", $direction);
-        }
-
-        $rows = $qb->executeQuery()->fetchAllAssociative();
-
-        if (empty($rows)) {
+        if (empty($pivotRows)) {
             foreach ($items as $item) {
                 $item->{$setter}([]);
             }
             return;
         }
 
-        // Group by parent ID and map to models
+        // Build parent→related mapping
+        $pivotMap = [];
+        $relatedIds = [];
+        foreach ($pivotRows as $row) {
+            $pivotMap[$row[$foreignPivotKey]][] = $row[$relatedPivotKey];
+            $relatedIds[] = $row[$relatedPivotKey];
+        }
+        $relatedIds = array_values(array_unique($relatedIds));
+
+        // Step 2: Load related models via repository (supports translations, scopes, etc.)
+        $relatedItems = $relatedRepository->findBy([$relatedPrimaryKey => $relatedIds], $sort);
+
+        // Index related items by primary key
+        $relatedMap = [];
+        foreach ($relatedItems as $item) {
+            $relatedMap[$item->{$relatedPrimaryKey}] = $item;
+        }
+
+        // Step 3: Group by parent ID, preserving findBy() sort order
+        $reverseMap = [];
+        foreach ($pivotMap as $parentId => $relIds) {
+            foreach ($relIds as $relId) {
+                $reverseMap[$relId][] = $parentId;
+            }
+        }
+
         $grouped = [];
-        foreach ($rows as $row) {
-            $parentId = $row[$foreignPivotKey];
-            unset($row[$foreignPivotKey]);
-            $grouped[$parentId][] = $relatedRepository->mapToModel($row);
+        foreach ($relatedItems as $item) {
+            $relId = $item->{$relatedPrimaryKey};
+            if (isset($reverseMap[$relId])) {
+                foreach ($reverseMap[$relId] as $parentId) {
+                    $grouped[$parentId][] = $item;
+                }
+            }
         }
 
         // Set relations on each item

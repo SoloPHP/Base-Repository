@@ -136,6 +136,9 @@ abstract class BaseRepository implements RepositoryInterface
         if ($this->translationService !== null) {
             $this->translationService->setLocale($locale);
         }
+        if (!empty($this->relationConfig)) {
+            $this->getEagerLoadingService()->setLocale($locale);
+        }
         return $this;
     }
 
@@ -145,6 +148,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function withoutLocale(): static
     {
         $this->translationService?->reset();
+        $this->eagerLoadingService?->setLocale(null);
         return $this;
     }
 

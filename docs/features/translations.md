@@ -197,14 +197,21 @@ class ProductRepository extends BaseRepository
 
 ### Combining with Eager Loading
 
-Translations work with eager loading:
+Translations work with eager loading. When `withLocale()` is used together with `with()`, the locale automatically propagates to all related repositories:
 
 ```php
 $products = $repo
     ->with(['category', 'tags'])
     ->withLocale('uk')
     ->findBy(['status' => 'active']);
+
+// Both products AND their related categories/tags will have translated fields
+// (if their repositories also have $translationConfig defined)
 ```
+
+::: tip Locale Propagation
+Each related repository must have its own `$translationConfig` to include translations. Repositories without it will simply ignore the propagated locale.
+:::
 
 ### Combining with Soft Delete
 

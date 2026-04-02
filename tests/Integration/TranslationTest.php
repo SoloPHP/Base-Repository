@@ -7,6 +7,7 @@ namespace Solo\BaseRepository\Tests\Integration;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 use Solo\BaseRepository\BaseRepository;
+use Solo\BaseRepository\Relation\HasMany;
 
 class TranslationTest extends TestCase
 {
@@ -197,6 +198,141 @@ class TranslationTest extends TestCase
         $exists = $this->repository->withLocale('uk')->exists(['sku' => 'SKU-001']);
         $this->assertTrue($exists);
     }
+
+    public function testMapToModel(): void
+    {
+        $product = $this->repository->mapToModel([
+            'id' => 99,
+            'sku' => 'MAP-001',
+            'price' => 12.50,
+            'name' => 'Mapped',
+            'description' => 'Desc',
+        ]);
+
+        $this->assertEquals(99, $product->id);
+        $this->assertEquals('MAP-001', $product->sku);
+        $this->assertEquals('Mapped', $product->name);
+    }
+
+    public function testWithLocalePropagatesToEagerLoadedRelations(): void
+    {
+        // Create category table + translations
+        $this->connection->executeStatement('
+            CREATE TABLE categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug VARCHAR(50) NOT NULL
+            )
+        ');
+        $this->connection->executeStatement('
+            CREATE TABLE category_translations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_id INTEGER NOT NULL,
+                locale VARCHAR(5) NOT NULL,
+                title VARCHAR(255),
+                UNIQUE(category_id, locale)
+            )
+        ');
+        // Add category_id FK to products
+        $this->connection->executeStatement('
+            CREATE TABLE products_with_cat (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sku VARCHAR(50) NOT NULL,
+                price DECIMAL(10, 2) NOT NULL,
+                category_id INTEGER
+            )
+        ');
+        $this->connection->executeStatement('
+            CREATE TABLE product_with_cat_translations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                locale VARCHAR(5) NOT NULL,
+                name VARCHAR(255),
+                description TEXT,
+                UNIQUE(product_id, locale)
+            )
+        ');
+
+        // Seed
+        $this->connection->insert('categories', ['slug' => 'electronics']);
+        $this->connection->insert('category_translations', [
+            'category_id' => 1, 'locale' => 'uk', 'title' => 'Електроніка',
+        ]);
+
+        $this->connection->insert('products_with_cat', ['sku' => 'P1', 'price' => 10, 'category_id' => 1]);
+        $this->connection->insert('product_with_cat_translations', [
+            'product_id' => 1, 'locale' => 'uk', 'name' => 'Товар', 'description' => 'Опис',
+        ]);
+
+        $categoryRepo = new TranslatableCategoryRepository($this->connection);
+        $productRepo = new ProductWithCategoryRepository($this->connection, $categoryRepo);
+
+        // withLocale + with() — locale should propagate to category relation
+        $products = $productRepo->withLocale('uk')->with(['products'])->findBy([]);
+
+        $this->assertCount(1, $products);
+        $this->assertEquals('Електроніка', $products[0]->title);
+        $this->assertCount(1, $products[0]->products);
+        $this->assertEquals('Товар', $products[0]->products[0]->name);
+    }
+
+    public function testWithoutLocaleClearsEagerLoadingLocale(): void
+    {
+        $this->connection->executeStatement('
+            CREATE TABLE cats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug VARCHAR(50) NOT NULL
+            )
+        ');
+        $this->connection->executeStatement('
+            CREATE TABLE cat_translations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_id INTEGER NOT NULL,
+                locale VARCHAR(5) NOT NULL,
+                title VARCHAR(255),
+                UNIQUE(category_id, locale)
+            )
+        ');
+        $this->connection->executeStatement('
+            CREATE TABLE prods (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sku VARCHAR(50) NOT NULL,
+                price DECIMAL(10, 2) NOT NULL,
+                category_id INTEGER
+            )
+        ');
+        $this->connection->executeStatement('
+            CREATE TABLE prod_translations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                locale VARCHAR(5) NOT NULL,
+                name VARCHAR(255),
+                description TEXT,
+                UNIQUE(product_id, locale)
+            )
+        ');
+
+        $this->connection->insert('cats', ['slug' => 'food']);
+        $this->connection->insert('cat_translations', [
+            'category_id' => 1, 'locale' => 'uk', 'title' => 'Їжа',
+        ]);
+        $this->connection->insert('prods', ['sku' => 'F1', 'price' => 5, 'category_id' => 1]);
+        $this->connection->insert('prod_translations', [
+            'product_id' => 1, 'locale' => 'uk', 'name' => 'Хліб', 'description' => 'Смачний',
+        ]);
+
+        $prodRepo = new ProdWithTranslationRepository($this->connection);
+        $catRepo = new CatWithProductsRepository($this->connection, $prodRepo);
+
+        // Set locale then clear it
+        $catRepo->withLocale('uk');
+        $catRepo->withoutLocale();
+
+        $categories = $catRepo->with(['products'])->findBy([]);
+        $this->assertCount(1, $categories);
+        // No translations should be applied
+        $this->assertNull($categories[0]->title);
+        $this->assertNull($categories[0]->products[0]->name);
+    }
 }
 
 class TranslatableProduct
@@ -255,5 +391,179 @@ class NonTranslatableRepository extends BaseRepository
     public function __construct(\Doctrine\DBAL\Connection $connection)
     {
         parent::__construct($connection, NonTranslatableItem::class, 'simple_items');
+    }
+}
+
+class TranslatableCategory
+{
+    public array $products = [];
+
+    public function __construct(
+        public int $id,
+        public string $slug,
+        public ?string $title = null,
+    ) {
+    }
+
+    public function setProducts(array $products): void
+    {
+        $this->products = $products;
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            $data['slug'],
+            $data['title'] ?? null,
+        );
+    }
+}
+
+class TranslatableCategoryProduct
+{
+    public function __construct(
+        public int $id,
+        public string $sku,
+        public float $price,
+        public int $category_id,
+        public ?string $name = null,
+        public ?string $description = null,
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            $data['sku'],
+            (float) $data['price'],
+            (int) $data['category_id'],
+            $data['name'] ?? null,
+            $data['description'] ?? null,
+        );
+    }
+}
+
+class TranslatableCategoryRepository extends BaseRepository
+{
+    protected ?array $translationConfig = [
+        'table' => 'product_with_cat_translations',
+        'foreignKey' => 'product_id',
+        'fields' => ['name', 'description'],
+    ];
+
+    public function __construct(\Doctrine\DBAL\Connection $connection)
+    {
+        parent::__construct($connection, TranslatableCategoryProduct::class, 'products_with_cat');
+    }
+}
+
+class ProductWithCategoryRepository extends BaseRepository
+{
+    protected array $relationConfig = [];
+    protected ?array $translationConfig = [
+        'table' => 'category_translations',
+        'foreignKey' => 'category_id',
+        'fields' => ['title'],
+    ];
+
+    public function __construct(
+        \Doctrine\DBAL\Connection $connection,
+        public TranslatableCategoryRepository $categoryRepository,
+    ) {
+        $this->relationConfig = [
+            'products' => new HasMany(
+                repository: 'categoryRepository',
+                foreignKey: 'category_id',
+                setter: 'setProducts',
+            ),
+        ];
+        parent::__construct($connection, TranslatableCategory::class, 'categories');
+    }
+}
+
+class CatModel
+{
+    public array $products = [];
+
+    public function __construct(
+        public int $id,
+        public string $slug,
+        public ?string $title = null,
+    ) {
+    }
+
+    public function setProducts(array $products): void
+    {
+        $this->products = $products;
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self((int) $data['id'], $data['slug'], $data['title'] ?? null);
+    }
+}
+
+class ProdModel
+{
+    public function __construct(
+        public int $id,
+        public string $sku,
+        public float $price,
+        public int $category_id,
+        public ?string $name = null,
+        public ?string $description = null,
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            $data['sku'],
+            (float) $data['price'],
+            (int) $data['category_id'],
+            $data['name'] ?? null,
+            $data['description'] ?? null,
+        );
+    }
+}
+
+class ProdWithTranslationRepository extends BaseRepository
+{
+    protected ?array $translationConfig = [
+        'table' => 'prod_translations',
+        'foreignKey' => 'product_id',
+        'fields' => ['name', 'description'],
+    ];
+
+    public function __construct(\Doctrine\DBAL\Connection $connection)
+    {
+        parent::__construct($connection, ProdModel::class, 'prods');
+    }
+}
+
+class CatWithProductsRepository extends BaseRepository
+{
+    protected array $relationConfig = [];
+    protected ?array $translationConfig = [
+        'table' => 'cat_translations',
+        'foreignKey' => 'category_id',
+        'fields' => ['title'],
+    ];
+
+    public function __construct(
+        \Doctrine\DBAL\Connection $connection,
+        public ProdWithTranslationRepository $productRepository,
+    ) {
+        $this->relationConfig = [
+            'products' => new HasMany(
+                repository: 'productRepository',
+                foreignKey: 'category_id',
+                setter: 'setProducts',
+            ),
+        ];
+        parent::__construct($connection, CatModel::class, 'cats');
     }
 }
