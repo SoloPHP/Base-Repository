@@ -248,6 +248,30 @@ Deep nesting increases query count. Use judiciously.
 
 ---
 
+## Managing BelongsToMany Relations
+
+For BelongsToMany relations, use `attach()`, `detach()`, and `sync()` to manage the pivot table:
+
+```php
+// Attach tags to an article
+$articleRepo->attach('tags', $article->id, [1, 2, 3]);
+
+// Detach specific tags
+$articleRepo->detach('tags', $article->id, [1]);
+
+// Detach all tags
+$articleRepo->detach('tags', $article->id);
+
+// Sync: keep only these tags, remove the rest
+$articleRepo->sync('tags', $article->id, [2, 3]);
+```
+
+The first argument is the relation name from `$relationConfig` — the same name you use with `with()`.
+
+See [Mutation Methods — Pivot](/methods/mutation#pivot-methods) for full API reference.
+
+---
+
 ## How It Works
 
 ### Without Eager Loading (N+1 Problem)

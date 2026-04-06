@@ -11,6 +11,7 @@ use Solo\BaseRepository\Internal\QueryFactory;
 use Solo\BaseRepository\Internal\CriteriaBuilder;
 use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\EagerLoadingService;
+use Solo\BaseRepository\Internal\PivotService;
 use Solo\BaseRepository\Internal\RelationCriteriaApplier;
 use Solo\BaseRepository\Internal\TranslationService;
 use Solo\BaseRepository\Relation\RelationType;
@@ -289,6 +290,21 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         return $items;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function insert(array $data): int
+    {
+        $qb = $this->queryFactory->insertBuilder();
+
+        foreach ($data as $column => $value) {
+            $qb->setValue($column, ':' . $column)
+                ->setParameter($column, $value);
+        }
+
+        return $qb->executeStatement();
     }
 
     /**
@@ -665,6 +681,50 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     // Locking methods
+
+    /**
+     * @param list<int|string> $relatedIds
+     */
+    public function attach(string $relation, int|string $id, array $relatedIds): void
+    {
+        $this->getPivotService()->attach($this->resolveBelongsToMany($relation), $id, $relatedIds);
+    }
+
+    /**
+     * @param list<int|string> $relatedIds
+     */
+    public function detach(string $relation, int|string $id, array $relatedIds = []): void
+    {
+        $this->getPivotService()->detach($this->resolveBelongsToMany($relation), $id, $relatedIds);
+    }
+
+    /**
+     * @param list<int|string> $relatedIds
+     */
+    public function sync(string $relation, int|string $id, array $relatedIds): void
+    {
+        $this->getPivotService()->sync($this->resolveBelongsToMany($relation), $id, $relatedIds);
+    }
+
+    private function resolveBelongsToMany(string $relation): BelongsToMany
+    {
+        $config = $this->relationConfig[$relation] ?? null;
+
+        if (!$config instanceof BelongsToMany) {
+            throw new \InvalidArgumentException(
+                "Relation '{$relation}' is not defined or is not a BelongsToMany relation."
+            );
+        }
+
+        return $config;
+    }
+
+    private ?PivotService $pivotService = null;
+
+    private function getPivotService(): PivotService
+    {
+        return $this->pivotService ??= new PivotService($this->connection);
+    }
 
     /**
      * Lock row(s) by primary key with SELECT ... FOR UPDATE.

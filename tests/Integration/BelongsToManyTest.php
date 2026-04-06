@@ -241,6 +241,107 @@ class BelongsToManyTest extends TestCase
         $this->assertNotNull($foundArticle);
         $this->assertCount(2, $foundArticle->categories);
     }
+
+    // --- attach / detach / sync ---
+
+    public function testAttach(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+        $tag1 = $this->tagRepository->create(['name' => 'php', 'active' => 1]);
+        $tag2 = $this->tagRepository->create(['name' => 'js', 'active' => 1]);
+
+        $this->articleRepository->attach('tags', $article->id, [$tag1->id, $tag2->id]);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(2, $found->tags);
+    }
+
+    public function testAttachIgnoresDuplicates(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+        $tag = $this->tagRepository->create(['name' => 'php', 'active' => 1]);
+
+        $this->articleRepository->attach('tags', $article->id, [$tag->id]);
+        $this->articleRepository->attach('tags', $article->id, [$tag->id]);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(1, $found->tags);
+    }
+
+    public function testAttachEmptyArray(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+
+        $this->articleRepository->attach('tags', $article->id, []);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(0, $found->tags);
+    }
+
+    public function testDetachSpecific(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+        $tag1 = $this->tagRepository->create(['name' => 'php', 'active' => 1]);
+        $tag2 = $this->tagRepository->create(['name' => 'js', 'active' => 1]);
+
+        $this->articleRepository->attach('tags', $article->id, [$tag1->id, $tag2->id]);
+        $this->articleRepository->detach('tags', $article->id, [$tag1->id]);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(1, $found->tags);
+        $this->assertEquals('js', $found->tags[0]->name);
+    }
+
+    public function testDetachAll(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+        $tag1 = $this->tagRepository->create(['name' => 'php', 'active' => 1]);
+        $tag2 = $this->tagRepository->create(['name' => 'js', 'active' => 1]);
+
+        $this->articleRepository->attach('tags', $article->id, [$tag1->id, $tag2->id]);
+        $this->articleRepository->detach('tags', $article->id);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(0, $found->tags);
+    }
+
+    public function testSync(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+        $tag1 = $this->tagRepository->create(['name' => 'php', 'active' => 1]);
+        $tag2 = $this->tagRepository->create(['name' => 'js', 'active' => 1]);
+        $tag3 = $this->tagRepository->create(['name' => 'go', 'active' => 1]);
+
+        $this->articleRepository->attach('tags', $article->id, [$tag1->id, $tag2->id]);
+        $this->articleRepository->sync('tags', $article->id, [$tag2->id, $tag3->id]);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(2, $found->tags);
+
+        $names = array_map(fn($t) => $t->name, $found->tags);
+        sort($names);
+        $this->assertEquals(['go', 'js'], $names);
+    }
+
+    public function testSyncToEmpty(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+        $tag = $this->tagRepository->create(['name' => 'php', 'active' => 1]);
+
+        $this->articleRepository->attach('tags', $article->id, [$tag->id]);
+        $this->articleRepository->sync('tags', $article->id, []);
+
+        $found = $this->articleRepository->with(['tags'])->find($article->id);
+        $this->assertCount(0, $found->tags);
+    }
+
+    public function testAttachInvalidRelationThrows(): void
+    {
+        $article = $this->articleRepository->create(['title' => 'Test']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->articleRepository->attach('nonexistent', $article->id, [1]);
+    }
 }
 
 // Models

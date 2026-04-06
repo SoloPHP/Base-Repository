@@ -42,6 +42,46 @@ The repository automatically detects whether to use auto-increment or your provi
 
 ---
 
+## insert()
+
+Insert a record without returning the model. Useful for tables without auto-increment, pivot tables, or when you don't need the hydrated model back.
+
+```php
+public function insert(array $data): int
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$data` | `array<string, mixed>` | Column => value pairs to insert |
+
+**Returns:** Number of affected rows.
+
+**Example:**
+
+```php
+// Insert without fetching the model back
+$repo->insert([
+    'id' => Uuid::v4(),
+    'name' => 'Widget',
+    'price' => 99.99,
+]);
+
+// Log table — fire and forget
+$logRepo->insert([
+    'action' => 'user.login',
+    'user_id' => $userId,
+    'created_at' => date('Y-m-d H:i:s'),
+]);
+```
+
+::: tip When to use insert() vs create()
+Use `create()` when you need the hydrated model back. Use `insert()` when you just need to write data — it skips `lastInsertId()` and the extra `SELECT`.
+:::
+
+---
+
 ## insertMany()
 
 Bulk insert multiple records.
@@ -218,6 +258,90 @@ $affected = $postRepo->deleteBy([
     'status' => 'draft'
 ]);
 ```
+
+---
+
+## Pivot Methods
+
+These methods manage BelongsToMany relations via pivot tables. The relation must be defined in `$relationConfig`.
+
+### attach()
+
+Add related IDs to a pivot table. Existing links are not duplicated.
+
+```php
+public function attach(string $relation, int|string $id, array $relatedIds): void
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$relation` | `string` | Relation name from `$relationConfig` |
+| `$id` | `int\|string` | Parent model ID |
+| `$relatedIds` | `list<int\|string>` | Related model IDs to attach |
+
+**Example:**
+
+```php
+$articleRepo->attach('tags', $article->id, [1, 2, 3]);
+```
+
+### detach()
+
+Remove related IDs from a pivot table. Without `$relatedIds`, detaches all.
+
+```php
+public function detach(string $relation, int|string $id, array $relatedIds = []): void
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$relation` | `string` | Relation name from `$relationConfig` |
+| `$id` | `int\|string` | Parent model ID |
+| `$relatedIds` | `list<int\|string>` | Related IDs to detach (empty = all) |
+
+**Example:**
+
+```php
+// Detach specific tags
+$articleRepo->detach('tags', $article->id, [1]);
+
+// Detach all tags
+$articleRepo->detach('tags', $article->id);
+```
+
+### sync()
+
+Replace pivot records: keep only the given related IDs, remove the rest. Uses a diff-based approach (only inserts/deletes the difference).
+
+```php
+public function sync(string $relation, int|string $id, array $relatedIds): void
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$relation` | `string` | Relation name from `$relationConfig` |
+| `$id` | `int\|string` | Parent model ID |
+| `$relatedIds` | `list<int\|string>` | Related IDs that should remain |
+
+**Example:**
+
+```php
+// After sync: article has only tags 2 and 3
+$articleRepo->sync('tags', $article->id, [2, 3]);
+
+// Remove all relations
+$articleRepo->sync('tags', $article->id, []);
+```
+
+::: warning BelongsToMany Only
+`attach()`, `detach()`, and `sync()` only work with BelongsToMany relations. Calling them on HasMany, HasOne, or BelongsTo will throw `InvalidArgumentException`.
+:::
 
 ---
 

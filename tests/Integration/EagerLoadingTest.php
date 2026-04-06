@@ -226,6 +226,46 @@ class EagerLoadingTest extends TestCase
         $result = $this->postRepository->loadEagerRelations([], ['author', 'comments']);
         $this->assertEmpty($result);
     }
+
+    public function testWithUnknownRelationIsIgnored(): void
+    {
+        $author = $this->authorRepository->create(['name' => 'John']);
+        $this->postRepository->create(['title' => 'Test', 'author_id' => $author->id]);
+
+        $posts = $this->postRepository->with(['nonexistent', 'author'])->findBy([]);
+
+        $this->assertCount(1, $posts);
+        $this->assertNotNull($posts[0]->author);
+    }
+
+    public function testWithBelongsToWhenRelatedNotFound(): void
+    {
+        $this->postRepository->insert(['title' => 'Orphan', 'author_id' => 999]);
+
+        $posts = $this->postRepository->with(['author'])->findBy([]);
+
+        $this->assertCount(1, $posts);
+        $this->assertNull($posts[0]->author);
+    }
+
+    public function testWithNestedRelation(): void
+    {
+        $author = $this->authorRepository->create(['name' => 'John']);
+        $post = $this->postRepository->create(['title' => 'Test', 'author_id' => $author->id]);
+
+        $commentWithPostRepo = new CommentWithPostRepository(
+            $this->connection,
+            $this->postRepository
+        );
+        $commentWithPostRepo->create(['post_id' => $post->id, 'content' => 'Hello']);
+
+        $comments = $commentWithPostRepo->with(['post.author'])->findBy([]);
+
+        $this->assertCount(1, $comments);
+        $this->assertNotNull($comments[0]->post);
+        $this->assertNotNull($comments[0]->post->author);
+        $this->assertEquals('John', $comments[0]->post->author->name);
+    }
 }
 
 // Models
@@ -388,6 +428,54 @@ class AuthorWithProfile
     public function setProfile(?Profile $profile): void
     {
         $this->profile = $profile;
+    }
+}
+
+class CommentWithPost
+{
+    public ?Post $post = null;
+
+    public function __construct(
+        public int $id,
+        public int $post_id,
+        public string $content
+    ) {
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) $data['id'],
+            (int) $data['post_id'],
+            $data['content']
+        );
+    }
+
+    public function setPost(?Post $post): void
+    {
+        $this->post = $post;
+    }
+}
+
+class CommentWithPostRepository extends BaseRepository
+{
+    protected array $relationConfig = [];
+
+    public PostRepository $postRepository;
+
+    public function __construct(
+        \Doctrine\DBAL\Connection $connection,
+        PostRepository $postRepository
+    ) {
+        $this->postRepository = $postRepository;
+        $this->relationConfig = [
+            'post' => new BelongsTo(
+                repository: 'postRepository',
+                foreignKey: 'post_id',
+                setter: 'setPost',
+            ),
+        ];
+        parent::__construct($connection, CommentWithPost::class, 'comments');
     }
 }
 

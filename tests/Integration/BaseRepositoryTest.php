@@ -361,6 +361,22 @@ class BaseRepositoryTest extends TestCase
         $this->assertEquals(2, $this->repository->count([])); // Still 2, temp not committed
     }
 
+    public function testInsert(): void
+    {
+        $affected = $this->repository->insert([
+            'name' => 'John Doe',
+            'email' => 'john@example.com',
+            'status' => 'active',
+        ]);
+
+        $this->assertEquals(1, $affected);
+        $this->assertEquals(1, $this->repository->count([]));
+
+        $user = $this->repository->findOneBy(['email' => 'john@example.com']);
+        $this->assertNotNull($user);
+        $this->assertEquals('John Doe', $user->name);
+    }
+
     public function testEdgeCases(): void
     {
         // Insert many with empty array

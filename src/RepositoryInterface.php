@@ -84,6 +84,13 @@ interface RepositoryInterface
     public function create(array $data): object;
 
     /**
+     * Insert a record without returning the model
+     * @param array<string, mixed> $data
+     * @return int Affected rows
+     */
+    public function insert(array $data): int;
+
+    /**
      * @param list<array<string, mixed>> $records
      * @return int
      */
@@ -160,6 +167,34 @@ interface RepositoryInterface
      * @return static
      */
     public function withoutLocale(): static;
+
+    /**
+     * Attach related IDs to a BelongsToMany relation via pivot table.
+     *
+     * @param string $relation Relation name from $relationConfig
+     * @param int|string $id Parent model ID
+     * @param list<int|string> $relatedIds Related model IDs to attach
+     */
+    public function attach(string $relation, int|string $id, array $relatedIds): void;
+
+    /**
+     * Detach related IDs from a BelongsToMany relation via pivot table.
+     * If $relatedIds is empty, detaches all.
+     *
+     * @param string $relation Relation name from $relationConfig
+     * @param int|string $id Parent model ID
+     * @param list<int|string> $relatedIds Related model IDs to detach (empty = all)
+     */
+    public function detach(string $relation, int|string $id, array $relatedIds = []): void;
+
+    /**
+     * Sync a BelongsToMany relation: keep only the given related IDs.
+     *
+     * @param string $relation Relation name from $relationConfig
+     * @param int|string $id Parent model ID
+     * @param list<int|string> $relatedIds Related model IDs to sync
+     */
+    public function sync(string $relation, int|string $id, array $relatedIds): void;
 
     /**
      * Lock row(s) by primary key with SELECT ... FOR UPDATE.
