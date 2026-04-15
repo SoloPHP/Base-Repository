@@ -43,10 +43,11 @@ final readonly class CriteriaBuilder
             }
 
             if (is_array($value)) {
-                if (array_is_list($value)) {
-                    // Sequential array = IN list: ['active', 'pending']
+                if (is_int(array_key_first($value))) {
+                    // Integer-keyed array = IN list: [1, 2, 3] or [0 => 5, 2 => 8]
+                    $reindexed = array_values($value);
                     $qb->andWhere($qb->expr()->in($quotedField, ':' . $paramName));
-                    $qb->setParameter($paramName, $value, $this->determineArrayParamType($value));
+                    $qb->setParameter($paramName, $reindexed, $this->determineArrayParamType($reindexed));
                     continue;
                 }
 

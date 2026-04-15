@@ -45,6 +45,35 @@ class CriteriaBuilderTest extends TestCase
         $this->assertStringContainsString('NOT IN', $qb2->getSQL());
     }
 
+    public function testApplyCriteriaWithSequentialInList(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['status_id' => [1, 2, 3]]);
+        $this->assertStringContainsString('IN', $qb->getSQL());
+    }
+
+    public function testApplyCriteriaWithNonSequentialInList(): void
+    {
+        $qb = $this->createQueryBuilder();
+        // Simulates result of array_unique/array_filter: gaps in integer keys
+        $this->builder->applyCriteria($qb, ['status_id' => [0 => 5, 2 => 8]]);
+        $this->assertStringContainsString('IN', $qb->getSQL());
+    }
+
+    public function testApplyCriteriaWithOperatorSyntax(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['price' => ['>' => 5]]);
+        $this->assertStringContainsString('> :price', $qb->getSQL());
+    }
+
+    public function testApplyCriteriaWithNullNotEqual(): void
+    {
+        $qb = $this->createQueryBuilder();
+        $this->builder->applyCriteria($qb, ['deleted_at' => ['!=' => null]]);
+        $this->assertStringContainsString('IS NOT NULL', $qb->getSQL());
+    }
+
     public function testApplyCriteriaWithBetweenOperatorInvalidArrayThrowsException(): void
     {
         $this->expectException(\InvalidArgumentException::class);
