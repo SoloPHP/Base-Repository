@@ -15,7 +15,7 @@ interface RepositoryInterface
     public function find(int|string $id): ?object;
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @param array<string, 'ASC'|'DESC'>|null $orderBy
      * @return TModel|null
      */
@@ -27,7 +27,7 @@ interface RepositoryInterface
     public function findAll(): array;
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @param array<string, 'ASC'|'DESC'>|null $orderBy
      * @param int|null $perPage
      * @param int|null $page
@@ -37,39 +37,39 @@ interface RepositoryInterface
 
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      */
     public function exists(array $criteria): bool;
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      */
     public function count(array $criteria): int;
 
     /**
      * @param string $column
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return int|float
      */
     public function sum(string $column, array $criteria = []): int|float;
 
     /**
      * @param string $column
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return int|float
      */
     public function avg(string $column, array $criteria = []): int|float;
 
     /**
      * @param string $column
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return mixed
      */
     public function min(string $column, array $criteria = []): mixed;
 
     /**
      * @param string $column
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return mixed
      */
     public function max(string $column, array $criteria = []): mixed;
@@ -105,7 +105,7 @@ interface RepositoryInterface
     public function update(int|string $id, array $data): object;
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @param array<string, mixed> $data
      * @return int
      */
@@ -118,7 +118,7 @@ interface RepositoryInterface
     public function delete(int|string $id): int;
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return int
      */
     public function deleteBy(array $criteria): int;
@@ -133,7 +133,7 @@ interface RepositoryInterface
 
     /**
      * Force delete by criteria (permanent) bypassing soft delete
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return int
      */
     public function forceDeleteBy(array $criteria): int;

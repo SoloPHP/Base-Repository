@@ -10,24 +10,30 @@ use Solo\BaseRepository\Internal\TranslationService;
 
 class TranslationServiceTest extends TestCase
 {
-    public function testApplyJoinDoesNothingWithoutLocale(): void
+    public function testApplyJoinAddsLeftJoinAndSelects(): void
     {
-        $service = new TranslationService('product_translations', 'product_id', ['name']);
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $qb = $connection->createQueryBuilder()->select('p.*')->from('products', 'p');
+        $service = new TranslationService('product_translations', 'product_id', ['name', 'description']);
+        $conn = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $qb = $conn->createQueryBuilder()->select('p.*')->from('products', 'p');
 
-        $service->applyJoin($qb, 'p', 'id');
+        $service->applyJoin($qb, 'p', 'id', 'uk');
 
-        $this->assertStringNotContainsString('product_translations', $qb->getSQL());
+        $sql = $qb->getSQL();
+        $this->assertStringContainsString('LEFT JOIN product_translations tr', $sql);
+        $this->assertStringContainsString('tr.product_id = p.id', $sql);
+        $this->assertStringContainsString('tr.locale = :tr_locale', $sql);
+        $this->assertStringContainsString('tr.name', $sql);
+        $this->assertStringContainsString('tr.description', $sql);
+        $this->assertSame('uk', $qb->getParameter('tr_locale'));
     }
 
-    public function testConstructorValidatesForeignKey(): void
+    public function testConstructorRejectsUnsafeForeignKey(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         new TranslationService('translations', 'product id; DROP TABLE', ['name']);
     }
 
-    public function testConstructorValidatesFields(): void
+    public function testConstructorRejectsUnsafeFieldNames(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         new TranslationService('translations', 'product_id', ['name', '1=1; --']);

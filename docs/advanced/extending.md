@@ -30,11 +30,11 @@ These methods are available for use in your repository subclasses:
 
 | Method | Description |
 |--------|-------------|
-| `table()` | Returns QueryBuilder with table selected |
+| `table()` | Returns QueryBuilder with table selected (LEFT JOINs the translation table when a locale is active) |
 | `queryBuilder()` | Returns fresh QueryBuilder |
 | `mapRowToModel(array $row)` | Converts database row to model |
-| `applyCriteria(QueryBuilder $qb, array $criteria)` | Applies criteria to query |
-| `applyOrderBy(QueryBuilder $qb, array $orderBy)` | Applies sorting |
+| `applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true)` | Compiles criteria → WHERE expression and binds parameters on `$qb`. Pass `useAlias: false` for UPDATE/DELETE builders |
+| `applyOrderBy(QueryBuilder $qb, array $orderBy)` | Applies sorting (qualifies bare columns with the table alias) |
 
 ---
 

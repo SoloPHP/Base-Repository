@@ -213,6 +213,40 @@ $products = $repo
 Each related repository must have its own `$translationConfig` to include translations. Repositories without it will simply ignore the propagated locale.
 :::
 
+### Filtering Through Relation EXISTS
+
+When you filter a parent repository by a translated field on a related repository (`relation.translatedField`), the EXISTS subquery automatically `LEFT JOIN`s the related repo's translation table and resolves the field against it — provided the active locale is set on the parent.
+
+```php
+// User has many Articles, Article has translationConfig with 'title'
+$users->withLocale('uk')->findBy(['articles.title' => 'Привіт']);
+```
+
+Generated SQL (simplified):
+
+```sql
+SELECT u.* FROM users u
+WHERE EXISTS (
+    SELECT 1
+    FROM articles r
+    LEFT JOIN article_translations r_t
+        ON r_t.article_id = r.id AND r_t.locale = :locale
+    WHERE r.user_id = u.id
+      AND r_t.title = :value
+)
+```
+
+Non-translated fields on the same relation still target the relation table directly (e.g. `articles.slug`). Mixing both in one criteria works:
+
+```php
+$users->withLocale('uk')->findBy([
+    'articles.title' => 'Привіт',  // → translation alias
+    'articles.slug'  => 'hello',    // → relation alias
+]);
+```
+
+See [Criteria → Relation Filters](/features/criteria#relation-filters) for relation criteria details.
+
 ### Combining with Soft Delete
 
 Translations work with soft delete:

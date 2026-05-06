@@ -4,13 +4,65 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Internal;
 
-use Doctrine\DBAL\Query\QueryBuilder;
 use Doctrine\DBAL\ArrayParameterType;
+use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
+ * Recursive criteria → WHERE-expression compiler.
+ *
+ * The criteria tree is an associative array. Top level is implicitly AND-joined.
+ *
+ * Recognized entries
+ * ──────────────────
+ *   'OR'  / 'AND'   value MUST be an array → nested group joined by the named
+ *                   connector. Groups recurse arbitrarily deep. Throws if
+ *                   the value is not an array.
+ *
+ *   'rel.field'     If `rel` is a known relation, translates to an EXISTS
+ *                   subquery against the related table. Multiple `rel.*` keys
+ *                   in the same group share one EXISTS body (AND-joined inside).
+ *                   Prefix with '!' for NOT EXISTS: '!rel.field'. Unknown
+ *                   relation with '!' prefix throws (ambiguous intent).
+ *                   Unknown relation without '!' falls through to a qualified
+ *                   column leaf — useful for already-joined columns.
+ *
+ *   'field'         Leaf condition. Value forms:
+ *                     null              → IS NULL
+ *                     scalar            → equality
+ *                     [v1, v2, ...]     → IN (...)  (empty list → 1 = 0)
+ *                     ['op' => v]       → 'op' ∈ {=, !=, <>, <, >, <=, >=,
+ *                                                  LIKE, NOT LIKE, IN, NOT IN, BETWEEN}
+ *
+ *   list-form group body                : ['OR' => [['a' => 1], ['b' => 2]]]
+ *                   Lets a group contain repeating sub-criteria when the same
+ *                   field needs different operators in disjunction.
+ *
+ * EXISTS subqueries are emitted as raw SQL strings; their parameter placeholders
+ * (`:p1`, `:p2`, …) are bound on the outer QueryBuilder, since the whole query
+ * is prepared and executed there. No inner QueryBuilder is needed.
+ *
+ * @phpstan-type Translation array{table: string, foreignKey: string, fields: list<string>}
+ * @phpstan-type RelationMetaPivot array{
+ *     type: 'belongsToMany',
+ *     relatedTable: string,
+ *     relatedPrimaryKey: string,
+ *     pivotTable: string,
+ *     foreignPivotKey: string,
+ *     relatedPivotKey: string,
+ *     translation?: Translation,
+ * }
+ * @phpstan-type RelationMetaSimple array{
+ *     type: 'belongsTo'|'hasOne'|'hasMany',
+ *     foreignKey: string,
+ *     relatedTable: string,
+ *     relatedPrimaryKey: string,
+ *     translation?: Translation,
+ * }
+ * @phpstan-type RelationMeta RelationMetaPivot|RelationMetaSimple
+ *
  * @internal
  */
-final readonly class CriteriaBuilder
+final class CriteriaBuilder
 {
     private const array ALLOWED_OPERATORS = [
         '=', '!=', '<>', '<', '>', '<=', '>=',
@@ -18,116 +70,399 @@ final readonly class CriteriaBuilder
     ];
 
     /**
-     * @param non-empty-string $tableAlias
+     * Build a WHERE expression and bind its parameters on $qb.
+     *
+     * When $useAlias is false (UPDATE/DELETE context), $baseAlias must be the
+     * actual table name; self-relation EXISTS subqueries are rejected because
+     * MySQL forbids the UPDATE/DELETE target table inside a subquery FROM.
+     *
+     * $configuredRelations carries the full set of relation names from the
+     * caller's config, including ones that compiled to nothing (invalid type
+     * or missing repo property). Criteria targeting those are silently dropped
+     * — the caller has already opted to tolerate broken config there.
+     *
+     * @param array<string|int, mixed>    $criteria
+     * @param array<string, RelationMeta> $compiledRelations
+     * @param array<string, true>         $configuredRelations
      */
-    public function __construct(
-        private string $tableAlias
-    ) {
-    }
-
-    /**
-     * @param array<string, mixed> $criteria
-     * @return QueryBuilder
-     */
-    public function applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true): QueryBuilder
-    {
-        foreach ($criteria as $field => $value) {
-            $this->assertSafeIdentifier($field);
-            $isQualified = str_contains($field, '.');
-            $quotedField = ($useAlias && !$isQualified) ? "{$this->tableAlias}.{$field}" : $field;
-            $paramName = $isQualified ? str_replace('.', '_', $field) : $field;
-
-            if ($value === null) {
-                $qb->andWhere("{$quotedField} IS NULL");
-                continue;
-            }
-
-            if (is_array($value)) {
-                if (is_int(array_key_first($value))) {
-                    // Integer-keyed array = IN list: [1, 2, 3] or [0 => 5, 2 => 8]
-                    $reindexed = array_values($value);
-                    $qb->andWhere($qb->expr()->in($quotedField, ':' . $paramName));
-                    $qb->setParameter($paramName, $reindexed, $this->determineArrayParamType($reindexed));
-                    continue;
-                }
-
-                // Associative array = operator syntax: ['!=' => 'value']
-                $operator = (string) array_key_first($value);
-                $val = $value[$operator];
-                $this->assertSafeOperator($operator);
-                $upperOp = strtoupper($operator);
-
-                if ($val === null) {
-                    if ($upperOp === '=') {
-                        $qb->andWhere("{$quotedField} IS NULL");
-                        continue;
-                    }
-                    if ($upperOp === '!=' || $upperOp === '<>') {
-                        $qb->andWhere("{$quotedField} IS NOT NULL");
-                        continue;
-                    }
-                }
-
-                if ($upperOp === 'IN' || $upperOp === 'NOT IN') {
-                    if (!is_array($val)) {
-                        $val = [$val];
-                    }
-                    $expr = $upperOp === 'IN'
-                        ? $qb->expr()->in($quotedField, ':' . $paramName)
-                        : $qb->expr()->notIn($quotedField, ':' . $paramName);
-                    $qb->andWhere($expr);
-                    $qb->setParameter($paramName, $val, $this->determineArrayParamType($val));
-                    continue;
-                }
-
-                if ($upperOp === 'BETWEEN') {
-                    if (!is_array($val) || count($val) !== 2) {
-                        throw new \InvalidArgumentException("BETWEEN requires array of exactly 2 values");
-                    }
-                    $qb->andWhere("{$quotedField} BETWEEN :{$paramName}_min AND :{$paramName}_max");
-                    $qb->setParameter("{$paramName}_min", $val[0]);
-                    $qb->setParameter("{$paramName}_max", $val[1]);
-                    continue;
-                }
-
-                $qb->andWhere("{$quotedField} {$operator} :{$paramName}");
-                $qb->setParameter($paramName, $val);
-                continue;
-            }
-
-            $qb->andWhere("{$quotedField} = :{$paramName}");
-            $qb->setParameter($paramName, $value);
+    public function build(
+        QueryBuilder $qb,
+        array $criteria,
+        string $baseAlias,
+        string $basePrimaryKey,
+        array $compiledRelations,
+        array $configuredRelations = [],
+        bool $useAlias = true,
+        ?string $currentLocale = null,
+    ): ?string {
+        if ($criteria === []) {
+            return null;
         }
-
-        return $qb;
+        $counter = 0;
+        return $this->buildGroup(
+            $qb,
+            $criteria,
+            'AND',
+            $baseAlias,
+            $basePrimaryKey,
+            $compiledRelations,
+            $configuredRelations,
+            $useAlias,
+            $currentLocale,
+            $counter,
+        );
     }
 
     /**
-     * @param array<string, 'ASC'|'DESC'> $orderBy
+     * @param array<int, 'ASC'|'DESC'>|array<string, 'ASC'|'DESC'> $orderBy
      */
-    public function applyOrderBy(QueryBuilder $qb, array $orderBy): void
+    public function applyOrderBy(QueryBuilder $qb, array $orderBy, string $baseAlias): void
     {
         foreach ($orderBy as $field => $direction) {
+            $field = (string) $field;
+            if (str_starts_with($field, '!')) {
+                throw new \InvalidArgumentException("orderBy keys cannot have '!' prefix: {$field}");
+            }
             $this->assertSafeIdentifier($field);
-            $quotedField = str_contains($field, '.') ? $field : "{$this->tableAlias}.{$field}";
-            $dir = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
-            $qb->addOrderBy($quotedField, $dir);
+            $column = $this->qualify($field, $baseAlias);
+            $dir = strtoupper((string) $direction) === 'DESC' ? 'DESC' : 'ASC';
+            $qb->addOrderBy($column, $dir);
         }
     }
 
     /**
-     * @param string $identifier
+     * @param array<string|int, mixed>    $criteria
+     * @param array<string, RelationMeta> $compiledRelations
+     * @param array<string, true>         $configuredRelations
      */
+    private function buildGroup(
+        QueryBuilder $qb,
+        array $criteria,
+        string $connector,
+        string $baseAlias,
+        string $basePrimaryKey,
+        array $compiledRelations,
+        array $configuredRelations,
+        bool $useAlias,
+        ?string $currentLocale,
+        int &$counter,
+    ): ?string {
+        // Aggregate same-relation dot-keys so they share one EXISTS per group.
+        $relationGroups = [];
+        $clauses = [];
+
+        foreach ($criteria as $key => $value) {
+            // List-form sub-criteria: each numeric-keyed entry is itself a group (AND).
+            if (is_int($key)) {
+                if (!is_array($value)) {
+                    throw new \InvalidArgumentException(
+                        "List-form criteria entries must be arrays; got " . get_debug_type($value)
+                    );
+                }
+                $sub = $this->buildGroup(
+                    $qb,
+                    $value,
+                    'AND',
+                    $baseAlias,
+                    $basePrimaryKey,
+                    $compiledRelations,
+                    $configuredRelations,
+                    $useAlias,
+                    $currentLocale,
+                    $counter,
+                );
+                if ($sub !== null) {
+                    $clauses[] = $sub;
+                }
+                continue;
+            }
+
+            // Reserved group keys must carry an array value.
+            if ($key === 'OR' || $key === 'AND') {
+                if (!is_array($value)) {
+                    throw new \InvalidArgumentException(
+                        "'{$key}' group requires an array value; got " . get_debug_type($value)
+                    );
+                }
+                $sub = $this->buildGroup(
+                    $qb,
+                    $value,
+                    $key,
+                    $baseAlias,
+                    $basePrimaryKey,
+                    $compiledRelations,
+                    $configuredRelations,
+                    $useAlias,
+                    $currentLocale,
+                    $counter,
+                );
+                if ($sub !== null) {
+                    $clauses[] = $sub;
+                }
+                continue;
+            }
+
+            $this->assertSafeIdentifier($key);
+
+            // Relation dot-notation: aggregate by relation; emit one EXISTS per relation per group.
+            if (str_contains($key, '.')) {
+                [$rawRelation, $field] = explode('.', $key, 2);
+                $isNotExists = str_starts_with($rawRelation, '!');
+                $relation = $isNotExists ? substr($rawRelation, 1) : $rawRelation;
+
+                if ($field !== '' && isset($compiledRelations[$relation])) {
+                    $groupKey = ($isNotExists ? '!' : '') . $relation;
+                    $relationGroups[$groupKey][$field] = $value;
+                    continue;
+                }
+
+                // Configured but didn't compile (invalid type / missing repo property):
+                // silently drop, matching the prior contract for tolerant configs.
+                if (isset($configuredRelations[$relation])) {
+                    continue;
+                }
+
+                if ($isNotExists) {
+                    throw new \InvalidArgumentException(
+                        "Unknown relation '{$relation}' for NOT EXISTS criterion: '{$key}'"
+                    );
+                }
+                // Unknown relation without '!': fall through to qualified-column leaf.
+            }
+
+            $clauses[] = $this->buildLeaf($qb, $key, $value, $baseAlias, $useAlias, $counter);
+        }
+
+        foreach ($relationGroups as $relationKey => $fields) {
+            $clauses[] = $this->buildRelationExists(
+                $qb,
+                $relationKey,
+                $fields,
+                $baseAlias,
+                $basePrimaryKey,
+                $compiledRelations,
+                $useAlias,
+                $currentLocale,
+                $counter,
+            );
+        }
+
+        return $this->combine($connector, $clauses);
+    }
+
+    /**
+     * @param array<int, string> $clauses
+     */
+    private function combine(string $connector, array $clauses): ?string
+    {
+        if ($clauses === []) {
+            return null;
+        }
+        if (count($clauses) === 1) {
+            return $clauses[0];
+        }
+        return '(' . implode(' ' . $connector . ' ', $clauses) . ')';
+    }
+
+    private function buildLeaf(
+        QueryBuilder $qb,
+        string $field,
+        mixed $value,
+        string $baseAlias,
+        bool $useAlias,
+        int &$counter,
+    ): string {
+        $column = $this->qualify($field, $baseAlias, $useAlias);
+        $param = '_cb_p' . (++$counter);
+
+        if ($value === null) {
+            return "{$column} IS NULL";
+        }
+
+        if (!is_array($value)) {
+            $qb->setParameter($param, $value);
+            return "{$column} = :{$param}";
+        }
+
+        if ($value === []) {
+            return '1 = 0';
+        }
+
+        // List-form = IN(...) shortcut.
+        if (is_int(array_key_first($value))) {
+            $values = array_values($value);
+            $qb->setParameter($param, $values, $this->determineArrayParamType($values));
+            return "{$column} IN (:{$param})";
+        }
+
+        return $this->buildOperatorLeaf($qb, $column, $param, $value);
+    }
+
+    /**
+     * @param non-empty-array<string, mixed> $value Operator-form: ['op' => v]
+     */
+    private function buildOperatorLeaf(QueryBuilder $qb, string $column, string $param, array $value): string
+    {
+        $operator = (string) array_key_first($value);
+        $val = $value[$operator];
+        $this->assertSafeOperator($operator);
+        $upperOp = strtoupper($operator);
+
+        if ($val === null) {
+            return match ($upperOp) {
+                '=' => "{$column} IS NULL",
+                '!=', '<>' => "{$column} IS NOT NULL",
+                default => throw new \InvalidArgumentException(
+                    "Operator '{$operator}' does not accept null value"
+                ),
+            };
+        }
+
+        if ($upperOp === 'IN' || $upperOp === 'NOT IN') {
+            $list = is_array($val) ? $val : [$val];
+            if ($list === []) {
+                return $upperOp === 'IN' ? '1 = 0' : '1 = 1';
+            }
+            $qb->setParameter($param, $list, $this->determineArrayParamType($list));
+            return "{$column} {$upperOp} (:{$param})";
+        }
+
+        if ($upperOp === 'BETWEEN') {
+            if (!is_array($val) || count($val) !== 2) {
+                throw new \InvalidArgumentException('BETWEEN requires array of exactly 2 values');
+            }
+            $qb->setParameter("{$param}_min", $val[0]);
+            $qb->setParameter("{$param}_max", $val[1]);
+            return "{$column} BETWEEN :{$param}_min AND :{$param}_max";
+        }
+
+        if (is_array($val)) {
+            throw new \InvalidArgumentException("Operator '{$operator}' does not accept array value");
+        }
+
+        $qb->setParameter($param, $val);
+        return "{$column} {$operator} :{$param}";
+    }
+
+    private function qualify(string $field, string $baseAlias, bool $useAlias = true): string
+    {
+        if (!$useAlias || str_contains($field, '.')) {
+            return $field;
+        }
+        return "{$baseAlias}.{$field}";
+    }
+
+    /**
+     * @param array<string, mixed>        $fields
+     * @param array<string, RelationMeta> $compiledRelations
+     */
+    private function buildRelationExists(
+        QueryBuilder $qb,
+        string $relationKey,
+        array $fields,
+        string $baseAlias,
+        string $basePrimaryKey,
+        array $compiledRelations,
+        bool $useAlias,
+        ?string $currentLocale,
+        int &$counter,
+    ): string {
+        $isNotExists = str_starts_with($relationKey, '!');
+        $relation = $isNotExists ? substr($relationKey, 1) : $relationKey;
+        $compiled = $compiledRelations[$relation];
+
+        $relatedTable = $compiled['relatedTable'];
+        $pivotTable = $compiled['type'] === 'belongsToMany' ? $compiled['pivotTable'] : null;
+
+        // MySQL forbids the UPDATE/DELETE target table inside a subquery FROM (incl. JOINs).
+        if (!$useAlias && ($relatedTable === $baseAlias || $pivotTable === $baseAlias)) {
+            throw new \InvalidArgumentException(
+                "Self-referential EXISTS on relation '{$relation}' is not supported in "
+                . "updateBy/forceDeleteBy: target table '{$baseAlias}' cannot appear in a subquery FROM."
+            );
+        }
+
+        $relatedPK = $compiled['relatedPrimaryKey'];
+        $relAlias = '_r' . (++$counter) . '_' . preg_replace('/[^A-Za-z0-9_]/', '_', $relation);
+
+        if ($compiled['type'] === 'belongsToMany') {
+            $pivotAlias = $relAlias . '_p';
+            $from = "{$compiled['pivotTable']} {$pivotAlias} INNER JOIN {$relatedTable} {$relAlias} "
+                . "ON {$relAlias}.{$relatedPK} = {$pivotAlias}.{$compiled['relatedPivotKey']}";
+            $correlation = "{$pivotAlias}.{$compiled['foreignPivotKey']} = {$baseAlias}.{$basePrimaryKey}";
+        } else {
+            $foreignKey = $compiled['foreignKey'];
+            $from = "{$relatedTable} {$relAlias}";
+            $correlation = $compiled['type'] === 'belongsTo'
+                ? "{$relAlias}.{$relatedPK} = {$baseAlias}.{$foreignKey}"
+                : "{$relAlias}.{$foreignKey} = {$baseAlias}.{$basePrimaryKey}";
+        }
+
+        $translation = $compiled['translation'] ?? null;
+        if ($translation !== null && $currentLocale !== null) {
+            $tAlias = $relAlias . '_t';
+            $localeParam = '_cb_loc' . (++$counter);
+            $qb->setParameter($localeParam, $currentLocale);
+            $from .= " LEFT JOIN {$translation['table']} {$tAlias} "
+                . "ON {$tAlias}.{$translation['foreignKey']} = {$relAlias}.{$relatedPK} "
+                . "AND {$tAlias}.locale = :{$localeParam}";
+            $fields = $this->rewriteTranslatedFields($fields, $translation['fields'], $tAlias);
+        }
+
+        $body = $this->buildGroup($qb, $fields, 'AND', $relAlias, $relatedPK, [], [], true, null, $counter);
+        $where = $body !== null ? "{$correlation} AND {$body}" : $correlation;
+
+        return ($isNotExists ? 'NOT EXISTS' : 'EXISTS') . " (SELECT 1 FROM {$from} WHERE {$where})";
+    }
+
+    /**
+     * @param array<string|int, mixed> $fields
+     * @param list<string>             $translatedFields
+     * @return array<string|int, mixed>
+     */
+    private function rewriteTranslatedFields(array $fields, array $translatedFields, string $tAlias): array
+    {
+        return $this->rewriteTranslatedRecur($fields, array_flip($translatedFields), $tAlias);
+    }
+
+    /**
+     * @param array<string|int, mixed> $fields
+     * @param array<string, int>       $flipped
+     * @return array<string|int, mixed>
+     */
+    private function rewriteTranslatedRecur(array $fields, array $flipped, string $tAlias): array
+    {
+        $result = [];
+        foreach ($fields as $key => $value) {
+            if (is_int($key)) {
+                $result[$key] = is_array($value) ? $this->rewriteTranslatedRecur($value, $flipped, $tAlias) : $value;
+                continue;
+            }
+            if (($key === 'OR' || $key === 'AND') && is_array($value)) {
+                $result[$key] = $this->rewriteTranslatedRecur($value, $flipped, $tAlias);
+                continue;
+            }
+            if (isset($flipped[$key])) {
+                $result["{$tAlias}.{$key}"] = $value;
+                continue;
+            }
+            $result[$key] = $value;
+        }
+        return $result;
+    }
+
     private function assertSafeIdentifier(string $identifier): void
     {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $identifier)) {
+        if (!preg_match('/^!?[A-Za-z_][A-Za-z0-9_.]*$/', $identifier)) {
             throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
+        }
+        if (str_starts_with($identifier, '!') && !str_contains($identifier, '.')) {
+            throw new \InvalidArgumentException(
+                "'!' prefix is only valid on relation dot-notation (e.g. '!relation.field'): {$identifier}"
+            );
         }
     }
 
-    /**
-     * @param string $operator
-     */
     private function assertSafeOperator(string $operator): void
     {
         if (!in_array(strtoupper($operator), self::ALLOWED_OPERATORS, true)) {
@@ -135,6 +470,9 @@ final readonly class CriteriaBuilder
         }
     }
 
+    /**
+     * @param array<int, mixed> $values
+     */
     private function determineArrayParamType(array $values): ArrayParameterType
     {
         foreach ($values as $v) {

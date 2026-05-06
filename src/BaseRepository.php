@@ -12,7 +12,6 @@ use Solo\BaseRepository\Internal\CriteriaBuilder;
 use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\EagerLoadingService;
 use Solo\BaseRepository\Internal\PivotService;
-use Solo\BaseRepository\Internal\RelationCriteriaApplier;
 use Solo\BaseRepository\Internal\TranslationService;
 use Solo\BaseRepository\Relation\RelationType;
 use Solo\BaseRepository\Relation\BelongsTo;
@@ -23,6 +22,8 @@ use Solo\BaseRepository\Relation\HasOne;
 /**
  * @template TModel of object
  * @implements RepositoryInterface<TModel>
+ *
+ * @phpstan-import-type RelationMeta from CriteriaBuilder
  */
 abstract class BaseRepository implements RepositoryInterface
 {
@@ -30,11 +31,19 @@ abstract class BaseRepository implements RepositoryInterface
     protected CriteriaBuilder $criteriaBuilder;
     protected ModelMapper $modelMapper;
     protected QueryFactory $queryFactory;
-    protected RelationCriteriaApplier $relationCriteriaApplier;
 
     protected ?SoftDeleteService $softDeleteService = null;
     protected ?EagerLoadingService $eagerLoadingService = null;
     protected ?TranslationService $translationService = null;
+
+    /** Active locale for the next query. */
+    private ?string $currentLocale = null;
+
+    /** @var array<string, RelationMeta>|null Memoized — invalidated only on relationConfig mutation, which we don't support. */
+    private ?array $compiledRelationsCache = null;
+
+    /** @var array<string, true>|null Memoized set of configured relation names, including invalid configs. */
+    private ?array $configuredRelationsCache = null;
 
     // Configuration properties - override in child classes
     protected ?string $deletedAtColumn = null;
@@ -71,11 +80,10 @@ abstract class BaseRepository implements RepositoryInterface
         protected ?string $tableAlias = null,
         protected string $mapperMethod = 'fromArray'
     ) {
-        $this->criteriaBuilder = new CriteriaBuilder($this->getTableAlias());
+        $this->criteriaBuilder = new CriteriaBuilder();
         $this->modelMapper = new ModelMapper($this->modelClass, $this->mapperMethod);
         $this->queryFactory = new QueryFactory($this->connection, $this->table, $this->getTableAlias());
         $this->initializeServices();
-        $this->relationCriteriaApplier = new RelationCriteriaApplier($this->connection);
     }
 
     /**
@@ -118,9 +126,8 @@ abstract class BaseRepository implements RepositoryInterface
     {
         $qb = $this->queryFactory->tableSelectAll();
 
-        if ($this->translationService !== null && $this->translationService->hasLocale()) {
-            $this->translationService->applyJoin($qb, $this->getTableAlias(), $this->primaryKey);
-            $this->translationService->reset();
+        if ($this->translationService !== null && $this->currentLocale !== null) {
+            $this->translationService->applyJoin($qb, $this->getTableAlias(), $this->primaryKey, $this->currentLocale);
         }
 
         return $qb;
@@ -134,12 +141,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function withLocale(string $locale): static
     {
-        if ($this->translationService !== null) {
-            $this->translationService->setLocale($locale);
-        }
-        if (!empty($this->relationConfig)) {
-            $this->getEagerLoadingService()->setLocale($locale);
-        }
+        $this->currentLocale = $locale;
         return $this;
     }
 
@@ -148,8 +150,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function withoutLocale(): static
     {
-        $this->translationService?->reset();
-        $this->eagerLoadingService?->setLocale(null);
+        $this->currentLocale = null;
         return $this;
     }
 
@@ -205,37 +206,41 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @param array<string, 'ASC'|'DESC'>|null $orderBy
      * @return TModel|null
      */
     public function findOneBy(array $criteria, ?array $orderBy = null): ?object
     {
-        // Apply soft delete logic if enabled
-        if ($this->softDeleteService) {
-            $criteria = $this->softDeleteService->applyCriteria($criteria);
+        try {
+            // Apply soft delete logic if enabled
+            if ($this->softDeleteService) {
+                $criteria = $this->softDeleteService->applyCriteria($criteria);
+            }
+
+            $qb = $this->applyCriteria($this->table(), $criteria);
+            if ($orderBy) {
+                $this->applyOrderBy($qb, $orderBy);
+            }
+            $row = $qb->executeQuery()->fetchAssociative();
+
+            if (!$row) {
+                return null;
+            }
+
+            $item = $this->mapRowToModel($row);
+
+            // Apply eager loading if enabled
+            if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
+                $items = $this->eagerLoadingService->loadRelations([$item], [$this, 'loadEagerRelations']);
+                $this->eagerLoadingService->reset();
+                return $items[0] ?? null;
+            }
+
+            return $item;
+        } finally {
+            $this->currentLocale = null;
         }
-
-        $qb = $this->applyCriteria($this->table(), $criteria);
-        if ($orderBy) {
-            $this->applyOrderBy($qb, $orderBy);
-        }
-        $row = $qb->executeQuery()->fetchAssociative();
-
-        if (!$row) {
-            return null;
-        }
-
-        $item = $this->mapRowToModel($row);
-
-        // Apply eager loading if enabled
-        if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-            $items = $this->eagerLoadingService->loadRelations([$item], [$this, 'loadEagerRelations']);
-            $this->eagerLoadingService->reset();
-            return $items[0] ?? null;
-        }
-
-        return $item;
     }
 
     /**
@@ -248,48 +253,56 @@ abstract class BaseRepository implements RepositoryInterface
             return $this->findBy([]);
         }
 
-        $rows = $this->table()->executeQuery()->fetchAllAssociative();
-        $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
+        try {
+            $rows = $this->table()->executeQuery()->fetchAllAssociative();
+            $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
 
-        // Apply eager loading if enabled
-        if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-            $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
-            $this->eagerLoadingService->reset();
+            // Apply eager loading if enabled
+            if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
+                $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
+                $this->eagerLoadingService->reset();
+            }
+
+            return $items;
+        } finally {
+            $this->currentLocale = null;
         }
-
-        return $items;
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @param array<string, 'ASC'|'DESC'>|null $orderBy
      * @return list<TModel>
      */
     public function findBy(array $criteria, ?array $orderBy = null, ?int $perPage = null, ?int $page = null): array
     {
-        // Apply soft delete logic if enabled
-        if ($this->softDeleteService) {
-            $criteria = $this->softDeleteService->applyCriteria($criteria);
-        }
+        try {
+            // Apply soft delete logic if enabled
+            if ($this->softDeleteService) {
+                $criteria = $this->softDeleteService->applyCriteria($criteria);
+            }
 
-        $qb = $this->applyCriteria($this->table(), $criteria);
-        if ($orderBy) {
-            $this->applyOrderBy($qb, $orderBy);
-        }
-        if ($perPage !== null) {
-            $offset = (($page ?? 1) - 1) * $perPage;
-            $qb->setFirstResult($offset)->setMaxResults($perPage);
-        }
-        $rows = $qb->executeQuery()->fetchAllAssociative();
-        $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
+            $qb = $this->applyCriteria($this->table(), $criteria);
+            if ($orderBy) {
+                $this->applyOrderBy($qb, $orderBy);
+            }
+            if ($perPage !== null) {
+                $offset = (($page ?? 1) - 1) * $perPage;
+                $qb->setFirstResult($offset)->setMaxResults($perPage);
+            }
+            $rows = $qb->executeQuery()->fetchAllAssociative();
+            $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
 
-        // Apply eager loading if enabled
-        if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-            $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
-            $this->eagerLoadingService->reset();
-        }
+            // Apply eager loading if enabled
+            if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
+                $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
+                $this->eagerLoadingService->reset();
+            }
 
-        return $items;
+            return $items;
+        } finally {
+            $this->currentLocale = null;
+        }
     }
 
     /**
@@ -387,24 +400,28 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @param array<string, mixed> $data
      */
     public function updateBy(array $criteria, array $data): int
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->update($this->table);
+        try {
+            $qb = $this->connection->createQueryBuilder()
+                ->update($this->table);
 
-        // Set update values with prefixed parameter names to avoid conflicts with criteria parameters
-        foreach ($data as $column => $value) {
-            $paramName = 'update_' . $column;
-            $qb->set($column, ':' . $paramName)
-                ->setParameter($paramName, $value);
+            // Set update values with prefixed parameter names to avoid conflicts with criteria parameters
+            foreach ($data as $column => $value) {
+                $paramName = 'update_' . $column;
+                $qb->set($column, ':' . $paramName)
+                    ->setParameter($paramName, $value);
+            }
+
+            $qb = $this->applyCriteria($qb, $criteria, false);
+
+            return (int) $qb->executeStatement();
+        } finally {
+            $this->currentLocale = null;
         }
-
-        $qb = $this->applyCriteria($qb, $criteria, false);
-
-        return (int) $qb->executeStatement();
     }
 
     public function delete(int|string $id): int
@@ -417,7 +434,7 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      */
     public function deleteBy(array $criteria): int
     {
@@ -429,37 +446,43 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      */
     public function exists(array $criteria): bool
     {
-        // Apply soft delete logic if enabled
-        if ($this->softDeleteService) {
-            $criteria = $this->softDeleteService->applyCriteria($criteria);
+        try {
+            if ($this->softDeleteService) {
+                $criteria = $this->softDeleteService->applyCriteria($criteria);
+            }
+
+            $qb = $this->applyCriteria($this->table(), $criteria)
+                ->select('1')
+                ->setMaxResults(1);
+
+            $result = $qb->executeQuery()->fetchOne();
+            return $result !== false;
+        } finally {
+            $this->currentLocale = null;
         }
-
-        $qb = $this->applyCriteria($this->table(), $criteria)
-            ->select('1')
-            ->setMaxResults(1);
-
-        $result = $qb->executeQuery()->fetchOne();
-        return $result !== false;
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      */
     public function count(array $criteria): int
     {
-        // Apply soft delete logic if enabled
-        if ($this->softDeleteService) {
-            $criteria = $this->softDeleteService->applyCriteria($criteria);
+        try {
+            if ($this->softDeleteService) {
+                $criteria = $this->softDeleteService->applyCriteria($criteria);
+            }
+
+            $qb = $this->applyCriteria($this->table(), $criteria)
+                ->select('COUNT(*)');
+
+            return (int) $qb->executeQuery()->fetchOne();
+        } finally {
+            $this->currentLocale = null;
         }
-
-        $qb = $this->applyCriteria($this->table(), $criteria)
-            ->select('COUNT(*)');
-
-        return (int) $qb->executeQuery()->fetchOne();
     }
 
     public function sum(string $column, array $criteria = []): int|float
@@ -485,28 +508,30 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * @param string $function
      * @param string $column
-     * @param array<string, mixed> $criteria
+     * @param array<string|int, mixed> $criteria
      * @return mixed
      */
     protected function aggregate(string $function, string $column, array $criteria): mixed
     {
-        // Apply soft delete logic if enabled
-        if ($this->softDeleteService) {
-            $criteria = $this->softDeleteService->applyCriteria($criteria);
+        try {
+            if ($this->softDeleteService) {
+                $criteria = $this->softDeleteService->applyCriteria($criteria);
+            }
+
+            $this->assertSafeIdentifier($column);
+
+            $columnName = $this->getTableAlias() . '.' . $column;
+
+            $qb = $this->queryFactory->builder()
+                ->select(sprintf('%s(%s)', $function, $columnName))
+                ->from($this->table, $this->getTableAlias());
+
+            $qb = $this->applyCriteria($qb, $criteria);
+
+            return $qb->executeQuery()->fetchOne();
+        } finally {
+            $this->currentLocale = null;
         }
-
-        $this->assertSafeIdentifier($column);
-
-        // Use table alias for ambiguity resolution
-        $columnName = $this->getTableAlias() . '.' . $column;
-
-        $qb = $this->queryFactory->builder()
-            ->select(sprintf('%s(%s)', $function, $columnName))
-            ->from($this->table, $this->getTableAlias());
-
-        $qb = $this->applyCriteria($qb, $criteria);
-
-        return $qb->executeQuery()->fetchOne();
     }
 
     public function beginTransaction(): bool
@@ -552,72 +577,43 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * Compile $criteria into a WHERE expression and bind its parameters on $qb.
+     *
+     * @param array<string|int, mixed> $criteria
      */
     protected function applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true): QueryBuilder
     {
-        // Support relation dot-notation in criteria, e.g. "relation.field" => value
-        // Split incoming criteria into base-table criteria and relation criteria
-        [$baseCriteria, $relationCriteria] = $this->extractRelationDotCriteria($criteria);
+        if ($criteria === []) {
+            return $qb;
+        }
 
-        // Apply base criteria via CriteriaBuilder (keeps existing behavior)
-        $qb = $this->criteriaBuilder->applyCriteria($qb, $baseCriteria, $useAlias);
+        $expr = $this->criteriaBuilder->build(
+            $qb,
+            $criteria,
+            $useAlias ? $this->getTableAlias() : $this->table,
+            $this->primaryKey,
+            $this->compileRelationMetadata(),
+            $this->configuredRelationNames(),
+            $useAlias,
+            $this->currentLocale,
+        );
 
-        // Apply relation criteria as EXISTS-subqueries
-        if (!empty($relationCriteria)) {
-            $compiledRelations = $this->compileRelationMetadata();
-            $this->relationCriteriaApplier->apply(
-                $qb,
-                $this->getTableAlias(),
-                $this->getPrimaryKeyName(),
-                $compiledRelations,
-                $relationCriteria
-            );
+        if ($expr !== null) {
+            $qb->andWhere($expr);
         }
 
         return $qb;
     }
 
     /**
-     * @param array<string, mixed> $criteria
-     * @return array{0: array<string, mixed>, 1: array<string, array<string, mixed>>}
-     */
-    private function extractRelationDotCriteria(array $criteria): array
-    {
-        $baseCriteria = [];
-        $relationCriteria = [];
-
-        foreach ($criteria as $key => $value) {
-            if (str_contains($key, '.')) {
-                [$relation, $field] = explode('.', $key, 2);
-
-                // Check for NOT EXISTS prefix (!)
-                $isNotExists = false;
-                if (str_starts_with($relation, '!')) {
-                    $isNotExists = true;
-                    $relation = substr($relation, 1);
-                }
-
-                // Only treat as relation filter if relation exists in relationConfig
-                if (isset($this->relationConfig[$relation]) && $field !== '') {
-                    // Store with ! prefix if NOT EXISTS
-                    $relationKey = $isNotExists ? '!' . $relation : $relation;
-                    $relationCriteria[$relationKey][$field] = $value;
-                    continue;
-                }
-            }
-
-            $baseCriteria[$key] = $value;
-        }
-
-        return [$baseCriteria, $relationCriteria];
-    }
-
-    /**
-     * Compile relation metadata from relationConfig and repository graph.
+     * @return array<string, RelationMeta>
      */
     private function compileRelationMetadata(): array
     {
+        if ($this->compiledRelationsCache !== null) {
+            return $this->compiledRelationsCache;
+        }
+
         $result = [];
         foreach ($this->relationConfig as $relation => $config) {
             if (!$config instanceof RelationType) {
@@ -625,7 +621,6 @@ abstract class BaseRepository implements RepositoryInterface
             }
 
             $repositoryProperty = $config->getRepository();
-
             if (!property_exists($this, $repositoryProperty)) {
                 continue;
             }
@@ -635,7 +630,7 @@ abstract class BaseRepository implements RepositoryInterface
             $relatedPrimaryKey = $relatedRepo->getPrimaryKeyName();
 
             if ($config instanceof BelongsToMany) {
-                $result[$relation] = [
+                $meta = [
                     'type' => $config->getType(),
                     'relatedTable' => $relatedTable,
                     'relatedPrimaryKey' => $relatedPrimaryKey,
@@ -645,15 +640,30 @@ abstract class BaseRepository implements RepositoryInterface
                 ];
             } else {
                 /** @var BelongsTo|HasMany|HasOne $config */
-                $result[$relation] = [
+                $meta = [
                     'type' => $config->getType(),
                     'foreignKey' => $config->foreignKey,
                     'relatedTable' => $relatedTable,
                     'relatedPrimaryKey' => $relatedPrimaryKey,
                 ];
             }
+
+            if ($relatedRepo instanceof BaseRepository && $relatedRepo->translationConfig !== null) {
+                $meta['translation'] = $relatedRepo->translationConfig;
+            }
+
+            $result[$relation] = $meta;
         }
-        return $result;
+
+        return $this->compiledRelationsCache = $result;
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function configuredRelationNames(): array
+    {
+        return $this->configuredRelationsCache ??= array_fill_keys(array_keys($this->relationConfig), true);
     }
 
     /**
@@ -661,7 +671,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     protected function applyOrderBy(QueryBuilder $qb, array $orderBy): void
     {
-        $this->criteriaBuilder->applyOrderBy($qb, $orderBy);
+        $this->criteriaBuilder->applyOrderBy($qb, $orderBy, $this->getTableAlias());
     }
 
     /**
@@ -770,12 +780,16 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function forceDeleteBy(array $criteria): int
     {
-        $qb = $this->connection->createQueryBuilder()
-            ->delete($this->table);
+        try {
+            $qb = $this->connection->createQueryBuilder()
+                ->delete($this->table);
 
-        $qb = $this->applyCriteria($qb, $criteria, false);
+            $qb = $this->applyCriteria($qb, $criteria, false);
 
-        return (int) $qb->executeStatement();
+            return (int) $qb->executeStatement();
+        } finally {
+            $this->currentLocale = null;
+        }
     }
 
     /**
@@ -817,7 +831,7 @@ abstract class BaseRepository implements RepositoryInterface
         $grouped = $service->groupByTopLevel($relations);
 
         foreach ($grouped as $relation => $nested) {
-            $service->loadRelation($items, $relation, $this->relationConfig, $this, $nested);
+            $service->loadRelation($items, $relation, $this->relationConfig, $this, $nested, $this->currentLocale);
         }
 
         return $items;

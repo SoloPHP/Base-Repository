@@ -193,6 +193,17 @@ $affected = $postRepo->updateBy(
 );
 ```
 
+::: warning Self-relations are rejected
+`updateBy()` (and `forceDeleteBy()`) refuse relation-criteria EXISTS subqueries that target the same table being modified — MySQL forbids referencing the UPDATE/DELETE target table inside a subquery's `FROM`. A clear `InvalidArgumentException` is thrown rather than letting the database fail mid-operation.
+
+For self-referential criteria (e.g. `parent_id` on `categories`), fetch IDs first and update with a plain `IN`:
+
+```php
+$ids = array_column($repo->findBy(['children.name' => 'x']), 'id');
+$repo->updateBy(['id' => $ids], ['archived' => 1]);
+```
+:::
+
 ---
 
 ## delete()

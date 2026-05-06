@@ -16,7 +16,6 @@ use Solo\BaseRepository\Relation\HasOne;
 final class EagerLoadingService
 {
     private array $eagerLoad = [];
-    private ?string $locale = null;
 
     /**
      * Set relations to eager load
@@ -24,14 +23,6 @@ final class EagerLoadingService
     public function setRelations(array $relations): void
     {
         $this->eagerLoad = $relations;
-    }
-
-    /**
-     * Set locale to propagate to related repositories
-     */
-    public function setLocale(?string $locale): void
-    {
-        $this->locale = $locale;
     }
 
     /**
@@ -68,11 +59,11 @@ final class EagerLoadingService
     public function reset(): void
     {
         $this->eagerLoad = [];
-        $this->locale = null;
     }
 
     /**
-     * Load a specific relation
+     * Load a specific relation. If $locale is non-null, propagates it to the
+     * related repository via withLocale() before fetching.
      *
      * @param array<string, RelationType> $relationConfig
      */
@@ -81,7 +72,8 @@ final class EagerLoadingService
         string $relation,
         array $relationConfig,
         object $repository,
-        array $nested = []
+        array $nested = [],
+        ?string $locale = null,
     ): void {
         $config = $relationConfig[$relation] ?? null;
         if (!$config instanceof RelationType) {
@@ -93,8 +85,8 @@ final class EagerLoadingService
         $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
 
         // Propagate locale to related repository for translation support
-        if ($this->locale !== null && method_exists($relatedRepository, 'withLocale')) {
-            $relatedRepository->withLocale($this->locale);
+        if ($locale !== null && method_exists($relatedRepository, 'withLocale')) {
+            $relatedRepository->withLocale($locale);
         }
 
         // If nested relations are requested, configure them on the related repository

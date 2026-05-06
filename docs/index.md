@@ -25,7 +25,7 @@ features:
     details: Load related entities efficiently with with(). Supports nested relations via dot-notation.
   - icon: 🔍
     title: Rich Criteria Syntax
-    details: Expressive filtering with equality, NULL checks, IN lists, operators, and relation EXISTS subqueries.
+    details: Operators, IN lists, BETWEEN, OR/AND groups, NULL checks, and correlated EXISTS subqueries via relation dot-notation.
   - icon: 📊
     title: Aggregations
     details: Built-in count(), sum(), avg(), min(), max() with full criteria support.

@@ -7,21 +7,22 @@ namespace Solo\BaseRepository\Internal;
 use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
+ * Stateless translation joiner. The active locale lives on BaseRepository
+ * and is passed in at the call site.
+ *
  * @internal
  */
-final class TranslationService
+final readonly class TranslationService
 {
-    private ?string $locale = null;
-
     /**
-     * @param string $table Translation table name
-     * @param string $foreignKey Foreign key column in translation table
-     * @param list<string> $fields Translated field names
+     * @param string       $table      Translation table name
+     * @param string       $foreignKey Foreign key column in translation table
+     * @param list<string> $fields     Translated field names
      */
     public function __construct(
-        private readonly string $table,
-        private readonly string $foreignKey,
-        private readonly array $fields,
+        private string $table,
+        private string $foreignKey,
+        private array $fields,
     ) {
         $this->assertSafeIdentifier($foreignKey);
         foreach ($fields as $field) {
@@ -29,30 +30,11 @@ final class TranslationService
         }
     }
 
-    public function setLocale(string $locale): void
-    {
-        $this->locale = $locale;
-    }
-
-    public function hasLocale(): bool
-    {
-        return $this->locale !== null;
-    }
-
-    public function reset(): void
-    {
-        $this->locale = null;
-    }
-
     /**
      * Apply LEFT JOIN with translation table to the query builder.
      */
-    public function applyJoin(QueryBuilder $qb, string $tableAlias, string $primaryKey): void
+    public function applyJoin(QueryBuilder $qb, string $tableAlias, string $primaryKey, string $locale): void
     {
-        if ($this->locale === null) {
-            return;
-        }
-
         $qb->leftJoin(
             $tableAlias,
             $this->table,
@@ -69,7 +51,7 @@ final class TranslationService
             $qb->addSelect('tr.' . $field);
         }
 
-        $qb->setParameter('tr_locale', $this->locale);
+        $qb->setParameter('tr_locale', $locale);
     }
 
     private function assertSafeIdentifier(string $identifier): void
