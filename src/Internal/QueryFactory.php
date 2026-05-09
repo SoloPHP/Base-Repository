@@ -51,4 +51,14 @@ final readonly class QueryFactory
             ->andWhere("{$primaryKey} = :id")
             ->setParameter('id', $id);
     }
+
+    public function updateBuilder(): QueryBuilder
+    {
+        return $this->connection->createQueryBuilder()->update($this->table);
+    }
+
+    public function deleteBuilder(): QueryBuilder
+    {
+        return $this->connection->createQueryBuilder()->delete($this->table);
+    }
 }

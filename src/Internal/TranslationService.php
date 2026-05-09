@@ -24,9 +24,9 @@ final readonly class TranslationService
         private string $foreignKey,
         private array $fields,
     ) {
-        $this->assertSafeIdentifier($foreignKey);
+        Identifier::assertSafe($foreignKey);
         foreach ($fields as $field) {
-            $this->assertSafeIdentifier($field);
+            Identifier::assertSafe($field);
         }
     }
 
@@ -52,12 +52,5 @@ final readonly class TranslationService
         }
 
         $qb->setParameter('tr_locale', $locale);
-    }
-
-    private function assertSafeIdentifier(string $identifier): void
-    {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
-            throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
-        }
     }
 }

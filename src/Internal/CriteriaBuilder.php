@@ -123,7 +123,7 @@ final class CriteriaBuilder
             if (str_starts_with($field, '!')) {
                 throw new \InvalidArgumentException("orderBy keys cannot have '!' prefix: {$field}");
             }
-            $this->assertSafeIdentifier($field);
+            Identifier::assertSafeCriteriaKey($field);
             $column = $this->qualify($field, $baseAlias);
             $dir = strtoupper((string) $direction) === 'DESC' ? 'DESC' : 'ASC';
             $qb->addOrderBy($column, $dir);
@@ -202,7 +202,7 @@ final class CriteriaBuilder
                 continue;
             }
 
-            $this->assertSafeIdentifier($key);
+            Identifier::assertSafeCriteriaKey($key);
 
             // Relation dot-notation: aggregate by relation; emit one EXISTS per relation per group.
             if (str_contains($key, '.')) {
@@ -449,18 +449,6 @@ final class CriteriaBuilder
             $result[$key] = $value;
         }
         return $result;
-    }
-
-    private function assertSafeIdentifier(string $identifier): void
-    {
-        if (!preg_match('/^!?[A-Za-z_][A-Za-z0-9_.]*$/', $identifier)) {
-            throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
-        }
-        if (str_starts_with($identifier, '!') && !str_contains($identifier, '.')) {
-            throw new \InvalidArgumentException(
-                "'!' prefix is only valid on relation dot-notation (e.g. '!relation.field'): {$identifier}"
-            );
-        }
     }
 
     private function assertSafeOperator(string $operator): void

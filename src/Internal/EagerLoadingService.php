@@ -34,14 +34,6 @@ final class EagerLoadingService
     }
 
     /**
-     * Get current relations
-     */
-    public function getRelations(): array
-    {
-        return $this->eagerLoad;
-    }
-
-    /**
      * Load relations using provided callback
      */
     public function loadRelations(array $items, callable $relationLoader): array
@@ -180,12 +172,6 @@ final class EagerLoadingService
 
         // Step 2: Load related models via repository (supports translations, scopes, etc.)
         $relatedItems = $relatedRepository->findBy([$relatedPrimaryKey => $relatedIds], $sort);
-
-        // Index related items by primary key
-        $relatedMap = [];
-        foreach ($relatedItems as $item) {
-            $relatedMap[$item->{$relatedPrimaryKey}] = $item;
-        }
 
         // Step 3: Group by parent ID, preserving findBy() sort order
         $reverseMap = [];

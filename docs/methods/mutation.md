@@ -111,7 +111,8 @@ echo "Inserted {$affected} records"; // "Inserted 3 records"
 ```
 
 ::: info Implementation Details
-- Records are inserted in chunks of 500 for large datasets
+- Each chunk of up to 500 records is sent as a single multi-row `INSERT … VALUES (…),(…),…` statement
+- Records within a chunk are grouped by their column-set, so heterogeneous records still produce one INSERT per group rather than per row
 - The entire operation is wrapped in a transaction
 - Returns total affected rows count
 :::

@@ -9,13 +9,16 @@ use Solo\BaseRepository\Internal\EagerLoadingService;
 
 class EagerLoadingServiceTest extends TestCase
 {
-    public function testGetRelations(): void
+    public function testHasRelations(): void
     {
         $service = new EagerLoadingService();
-        $this->assertEquals([], $service->getRelations());
+        $this->assertFalse($service->hasRelations());
 
         $service->setRelations(['comments', 'user']);
-        $this->assertEquals(['comments', 'user'], $service->getRelations());
+        $this->assertTrue($service->hasRelations());
+
+        $service->reset();
+        $this->assertFalse($service->hasRelations());
     }
 
     public function testGroupByTopLevelWithInvalidRelations(): void

@@ -6,12 +6,14 @@ namespace Solo\BaseRepository;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
-use Solo\BaseRepository\Internal\ModelMapper;
-use Solo\BaseRepository\Internal\QueryFactory;
+use Doctrine\DBAL\ArrayParameterType;
 use Solo\BaseRepository\Internal\CriteriaBuilder;
-use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\EagerLoadingService;
+use Solo\BaseRepository\Internal\Identifier;
+use Solo\BaseRepository\Internal\ModelMapper;
 use Solo\BaseRepository\Internal\PivotService;
+use Solo\BaseRepository\Internal\QueryFactory;
+use Solo\BaseRepository\Internal\SoftDeleteService;
 use Solo\BaseRepository\Internal\TranslationService;
 use Solo\BaseRepository\Relation\RelationType;
 use Solo\BaseRepository\Relation\BelongsTo;
@@ -35,6 +37,7 @@ abstract class BaseRepository implements RepositoryInterface
     protected ?SoftDeleteService $softDeleteService = null;
     protected ?EagerLoadingService $eagerLoadingService = null;
     protected ?TranslationService $translationService = null;
+    private ?PivotService $pivotService = null;
 
     /** Active locale for the next query. */
     private ?string $currentLocale = null;
@@ -45,7 +48,6 @@ abstract class BaseRepository implements RepositoryInterface
     /** @var array<string, true>|null Memoized set of configured relation names, including invalid configs. */
     private ?array $configuredRelationsCache = null;
 
-    // Configuration properties - override in child classes
     protected ?string $deletedAtColumn = null;
     /** @var array<string, RelationType|mixed> */
     protected array $relationConfig = [];
@@ -86,17 +88,12 @@ abstract class BaseRepository implements RepositoryInterface
         $this->initializeServices();
     }
 
-    /**
-     * Initialize services based on configuration
-     */
     private function initializeServices(): void
     {
-        // Initialize soft delete service if column is defined
         if ($this->deletedAtColumn !== null) {
             $this->softDeleteService = new SoftDeleteService($this->deletedAtColumn);
         }
 
-        // Initialize translation service if config is defined
         if ($this->translationConfig !== null) {
             $this->translationService = new TranslationService(
                 $this->translationConfig['table'],
@@ -106,15 +103,9 @@ abstract class BaseRepository implements RepositoryInterface
         }
     }
 
-    /**
-     * Get or create EagerLoadingService (lazy initialization)
-     */
     private function getEagerLoadingService(): EagerLoadingService
     {
-        if ($this->eagerLoadingService === null) {
-            $this->eagerLoadingService = new EagerLoadingService();
-        }
-        return $this->eagerLoadingService;
+        return $this->eagerLoadingService ??= new EagerLoadingService();
     }
 
     protected function queryBuilder(): QueryBuilder
@@ -178,17 +169,12 @@ abstract class BaseRepository implements RepositoryInterface
         return $this->primaryKey;
     }
 
-    /**
-     * Get the database connection
-     */
     public function getConnection(): Connection
     {
         return $this->connection;
     }
 
     /**
-     * Map a database row to a model instance
-     *
      * @param array<string, mixed> $row
      * @return TModel
      */
@@ -213,7 +199,6 @@ abstract class BaseRepository implements RepositoryInterface
     public function findOneBy(array $criteria, ?array $orderBy = null): ?object
     {
         try {
-            // Apply soft delete logic if enabled
             if ($this->softDeleteService) {
                 $criteria = $this->softDeleteService->applyCriteria($criteria);
             }
@@ -230,7 +215,6 @@ abstract class BaseRepository implements RepositoryInterface
 
             $item = $this->mapRowToModel($row);
 
-            // Apply eager loading if enabled
             if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
                 $items = $this->eagerLoadingService->loadRelations([$item], [$this, 'loadEagerRelations']);
                 $this->eagerLoadingService->reset();
@@ -248,25 +232,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function findAll(): array
     {
-        // Use findBy with soft delete logic if enabled
-        if ($this->softDeleteService) {
-            return $this->findBy([]);
-        }
-
-        try {
-            $rows = $this->table()->executeQuery()->fetchAllAssociative();
-            $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
-
-            // Apply eager loading if enabled
-            if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-                $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
-                $this->eagerLoadingService->reset();
-            }
-
-            return $items;
-        } finally {
-            $this->currentLocale = null;
-        }
+        return $this->findBy([]);
     }
 
     /**
@@ -277,7 +243,6 @@ abstract class BaseRepository implements RepositoryInterface
     public function findBy(array $criteria, ?array $orderBy = null, ?int $perPage = null, ?int $page = null): array
     {
         try {
-            // Apply soft delete logic if enabled
             if ($this->softDeleteService) {
                 $criteria = $this->softDeleteService->applyCriteria($criteria);
             }
@@ -293,7 +258,6 @@ abstract class BaseRepository implements RepositoryInterface
             $rows = $qb->executeQuery()->fetchAllAssociative();
             $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
 
-            // Apply eager loading if enabled
             if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
                 $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
                 $this->eagerLoadingService->reset();
@@ -311,12 +275,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function insert(array $data): int
     {
         $qb = $this->queryFactory->insertBuilder();
-
-        foreach ($data as $column => $value) {
-            $qb->setValue($column, ':' . $column)
-                ->setParameter($column, $value);
-        }
-
+        $this->bindInsertValues($qb, $data);
         return $qb->executeStatement();
     }
 
@@ -330,23 +289,22 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         $result = $this->withTransaction(function () use ($records) {
-            $chunks = array_chunk($records, 500);
             $affected = 0;
-
-            foreach ($chunks as $chunk) {
-                foreach ($chunk as $record) {
-                    $qb = $this->connection->createQueryBuilder()
-                        ->insert($this->table);
-
-                    foreach ($record as $column => $value) {
-                        $qb->setValue($column, ':' . $column)
-                            ->setParameter($column, $value);
+            foreach (array_chunk($records, 500) as $chunk) {
+                // Group by column-set so each bulk INSERT has consistent columns.
+                $groups = [];
+                foreach ($chunk as $row) {
+                    $cols = array_keys($row);
+                    $sig = implode("\0", $cols);
+                    if (!isset($groups[$sig])) {
+                        $groups[$sig] = ['cols' => $cols, 'rows' => []];
                     }
-
-                    $affected += $qb->executeStatement();
+                    $groups[$sig]['rows'][] = $row;
+                }
+                foreach ($groups as $group) {
+                    $affected += $this->insertBulk($group['cols'], $group['rows']);
                 }
             }
-
             return $affected;
         });
         return (int) $result;
@@ -359,15 +317,9 @@ abstract class BaseRepository implements RepositoryInterface
     public function create(array $data): object
     {
         $qb = $this->queryFactory->insertBuilder();
-
-        foreach ($data as $column => $value) {
-            $qb->setValue($column, ':' . $column)
-                ->setParameter($column, $value);
-        }
-
+        $this->bindInsertValues($qb, $data);
         $qb->executeStatement();
 
-        // Use provided ID or get auto-generated one
         $id = $data[$this->primaryKey] ?? $this->connection->lastInsertId();
 
         /** @var TModel */
@@ -377,9 +329,48 @@ abstract class BaseRepository implements RepositoryInterface
     /**
      * @param array<string, mixed> $data
      */
+    private function bindInsertValues(QueryBuilder $qb, array $data): void
+    {
+        foreach ($data as $column => $value) {
+            $qb->setValue($column, ':' . $column)
+                ->setParameter($column, $value);
+        }
+    }
+
+    /**
+     * @param list<string>                     $columns
+     * @param list<array<string, mixed>>       $rows
+     */
+    private function insertBulk(array $columns, array $rows): int
+    {
+        foreach ($columns as $col) {
+            Identifier::assertSafe($col);
+        }
+        $placeholderRow = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+        $placeholders = implode(', ', array_fill(0, count($rows), $placeholderRow));
+        $sql = sprintf(
+            'INSERT INTO %s (%s) VALUES %s',
+            $this->table,
+            implode(', ', $columns),
+            $placeholders
+        );
+
+        $params = [];
+        foreach ($rows as $row) {
+            foreach ($columns as $col) {
+                $params[] = $row[$col];
+            }
+        }
+
+        return (int) $this->connection->executeStatement($sql, $params);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
     public function update(int|string $id, array $data): object
     {
-        $this->assertSafeIdentifier($this->primaryKey);
+        Identifier::assertSafe($this->primaryKey);
 
         $qb = $this->queryFactory->updateByIdBuilder($this->primaryKey, $id);
 
@@ -406,10 +397,9 @@ abstract class BaseRepository implements RepositoryInterface
     public function updateBy(array $criteria, array $data): int
     {
         try {
-            $qb = $this->connection->createQueryBuilder()
-                ->update($this->table);
+            $qb = $this->queryFactory->updateBuilder();
 
-            // Set update values with prefixed parameter names to avoid conflicts with criteria parameters
+            // Prefix param names to avoid collision with criteria parameters bound on the same QB.
             foreach ($data as $column => $value) {
                 $paramName = 'update_' . $column;
                 $qb->set($column, ':' . $paramName)
@@ -518,7 +508,7 @@ abstract class BaseRepository implements RepositoryInterface
                 $criteria = $this->softDeleteService->applyCriteria($criteria);
             }
 
-            $this->assertSafeIdentifier($column);
+            Identifier::assertSafe($column);
 
             $columnName = $this->getTableAlias() . '.' . $column;
 
@@ -564,16 +554,7 @@ abstract class BaseRepository implements RepositoryInterface
      */
     public function withTransaction(callable $callback): mixed
     {
-        $this->beginTransaction();
-
-        try {
-            $result = $callback($this);
-            $this->commit();
-            return $result;
-        } catch (\Throwable $e) {
-            $this->rollBack();
-            throw $e;
-        }
+        return $this->connection->transactional(fn() => $callback($this));
     }
 
     /**
@@ -683,15 +664,6 @@ abstract class BaseRepository implements RepositoryInterface
         return $this->modelMapper->map($row);
     }
 
-    protected function assertSafeIdentifier(string $identifier): void
-    {
-        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
-            throw new \InvalidArgumentException("Unsafe identifier: {$identifier}");
-        }
-    }
-
-    // Locking methods
-
     /**
      * @param list<int|string> $relatedIds
      */
@@ -729,8 +701,6 @@ abstract class BaseRepository implements RepositoryInterface
         return $config;
     }
 
-    private ?PivotService $pivotService = null;
-
     private function getPivotService(): PivotService
     {
         return $this->pivotService ??= new PivotService($this->connection);
@@ -740,36 +710,32 @@ abstract class BaseRepository implements RepositoryInterface
      * Lock row(s) by primary key with SELECT ... FOR UPDATE.
      * Must be called inside a transaction.
      *
-     * @param int|string|array<int|string> $id Single ID or array of IDs
+     * @param int|string|list<int|string> $id Single ID or list of IDs
      */
     public function lockForUpdate(int|string|array $id): void
     {
-        $this->assertSafeIdentifier($this->primaryKey);
+        Identifier::assertSafe($this->primaryKey);
 
-        if (is_array($id)) {
-            if (empty($id)) {
-                return;
-            }
-            $placeholders = implode(',', array_fill(0, count($id), '?'));
-            $sql = "SELECT {$this->primaryKey} FROM {$this->table}"
-                . " WHERE {$this->primaryKey} IN ({$placeholders}) FOR UPDATE";
-            $this->connection->fetchAllAssociative($sql, array_values($id));
-        } else {
-            $this->connection->fetchOne(
-                "SELECT {$this->primaryKey} FROM {$this->table} WHERE {$this->primaryKey} = ? FOR UPDATE",
-                [$id]
-            );
+        $ids = is_array($id) ? $id : [$id];
+        if ($ids === []) {
+            return;
         }
-    }
 
-    // Soft delete methods
+        $paramType = is_int($ids[0]) ? ArrayParameterType::INTEGER : ArrayParameterType::STRING;
+        $this->connection->fetchAllAssociative(
+            "SELECT {$this->primaryKey} FROM {$this->table}"
+            . " WHERE {$this->primaryKey} IN (?) FOR UPDATE",
+            [$ids],
+            [$paramType]
+        );
+    }
 
     /**
      * Force delete (permanent)
      */
     public function forceDelete(int|string $id): int
     {
-        $this->assertSafeIdentifier($this->primaryKey);
+        Identifier::assertSafe($this->primaryKey);
 
         return (int) $this->queryFactory->deleteByIdBuilder($this->primaryKey, $id)
             ->executeStatement();
@@ -781,11 +747,8 @@ abstract class BaseRepository implements RepositoryInterface
     public function forceDeleteBy(array $criteria): int
     {
         try {
-            $qb = $this->connection->createQueryBuilder()
-                ->delete($this->table);
-
+            $qb = $this->queryFactory->deleteBuilder();
             $qb = $this->applyCriteria($qb, $criteria, false);
-
             return (int) $qb->executeStatement();
         } finally {
             $this->currentLocale = null;
@@ -802,8 +765,6 @@ abstract class BaseRepository implements RepositoryInterface
         }
         return 0;
     }
-
-    // Eager loading methods
 
     /**
      * Specify relations to eager load
@@ -826,8 +787,6 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         $service = $this->getEagerLoadingService();
-
-        // Support nested relations via dot-notation using top-level grouping
         $grouped = $service->groupByTopLevel($relations);
 
         foreach ($grouped as $relation => $nested) {

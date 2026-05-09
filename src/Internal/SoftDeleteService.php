@@ -38,7 +38,7 @@ final readonly class SoftDeleteService
      */
     public function getSoftDeleteData(): array
     {
-        return [$this->deletedAtColumn => $this->getCurrentTimestamp()];
+        return [$this->deletedAtColumn => date('Y-m-d H:i:s')];
     }
 
     /**
@@ -47,10 +47,5 @@ final readonly class SoftDeleteService
     public function getRestoreData(): array
     {
         return [$this->deletedAtColumn => null];
-    }
-
-    private function getCurrentTimestamp(): string
-    {
-        return (new \DateTime())->format('Y-m-d H:i:s');
     }
 }

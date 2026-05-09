@@ -169,8 +169,7 @@ public function lockForUpdate(int|string|array $id): void
 | `$id` | `int\|string\|array` | Single ID or array of IDs to lock |
 
 **Behavior:**
-- Executes `SELECT pk FROM table WHERE pk = ? FOR UPDATE`
-- For arrays, uses `WHERE pk IN (...)`
+- Executes `SELECT pk FROM table WHERE pk IN (?) FOR UPDATE` (single ID is normalized to a one-element list)
 - Empty array is a no-op
 - Must be called within an active transaction
 
