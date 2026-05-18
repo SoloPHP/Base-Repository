@@ -11,16 +11,15 @@ These methods are available on any repository instance:
 | `getTableName()` | `string` | The database table name |
 | `getPrimaryKeyName()` | `string` | The primary key column name |
 | `getConnection()` | `Connection` | The Doctrine DBAL connection instance |
-| `mapToModel(array $row)` | `TModel` | Converts a database row array to a model instance |
+| `getTranslationConfig()` | `?array` | The translation table config, or `null` if not configured |
 
 ```php
 // Access connection for raw queries
 $conn = $repo->getConnection();
-
-// Map a raw row to a model
 $row = $conn->fetchAssociative('SELECT * FROM users WHERE id = ?', [1]);
-$user = $repo->mapToModel($row);
 ```
+
+To map a raw row to a model from inside your subclass, use the protected `mapRowToModel()` — see the "Using QueryBuilder" examples below.
 
 ---
 

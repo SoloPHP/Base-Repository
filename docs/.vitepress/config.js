@@ -19,7 +19,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/installation' },
       { text: 'API', link: '/methods/retrieval' },
-      { text: 'v2.7.0', link: 'https://github.com/solophp/base-repository/releases' },
+      { text: 'v3.0.0', link: 'https://github.com/solophp/base-repository/releases' },
       {
         text: 'Links',
         items: [

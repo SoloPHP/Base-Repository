@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Solo\BaseRepository\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Solo\BaseRepository\Relation\BelongsTo;
-use Solo\BaseRepository\Relation\BelongsToMany;
-use Solo\BaseRepository\Relation\HasMany;
 use Solo\BaseRepository\Relation\HasOne;
+use Solo\BaseRepository\Relation\RelationKind;
 
 class RelationDtoTest extends TestCase
 {
@@ -21,9 +19,10 @@ class RelationDtoTest extends TestCase
             orderBy: ['created_at' => 'DESC'],
         );
 
-        $this->assertEquals('hasOne', $relation->getType());
-        $this->assertEquals('profileRepository', $relation->getRepository());
-        $this->assertEquals('setProfile', $relation->getSetter());
-        $this->assertEquals(['created_at' => 'DESC'], $relation->getOrderBy());
+        $this->assertSame(RelationKind::HasOne, $relation->kind());
+        $this->assertSame('profileRepository', $relation->repository);
+        $this->assertSame('user_id', $relation->foreignKey);
+        $this->assertSame('setProfile', $relation->setter);
+        $this->assertSame(['created_at' => 'DESC'], $relation->orderBy);
     }
 }

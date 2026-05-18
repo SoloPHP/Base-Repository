@@ -4,11 +4,30 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository;
 
+use Doctrine\DBAL\Connection;
+
 /**
  * @template TModel of object
  */
 interface RepositoryInterface
 {
+    /**
+     * @return non-empty-string
+     */
+    public function getTableName(): string;
+
+    /**
+     * @return non-empty-string
+     */
+    public function getPrimaryKeyName(): string;
+
+    public function getConnection(): Connection;
+
+    /**
+     * @return array{table: string, foreignKey: string, fields: list<string>}|null
+     */
+    public function getTranslationConfig(): ?array;
+
     /**
      * @return TModel|null
      */
@@ -204,25 +223,13 @@ interface RepositoryInterface
      */
     public function lockForUpdate(int|string|array $id): void;
 
-    /**
-     * @return bool
-     */
-    public function beginTransaction(): bool;
+    public function beginTransaction(): void;
 
-    /**
-     * @return bool
-     */
-    public function commit(): bool;
+    public function commit(): void;
 
-    /**
-     * @return bool
-     */
     public function inTransaction(): bool;
 
-    /**
-     * @return bool
-     */
-    public function rollBack(): bool;
+    public function rollBack(): void;
 
     /**
      * @template TReturn

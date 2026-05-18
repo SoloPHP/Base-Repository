@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Relation;
 
-final readonly class BelongsTo implements RelationType
+final readonly class BelongsTo extends AbstractRelation
 {
     /**
      * @param string $repository Repository property name
@@ -13,30 +13,11 @@ final readonly class BelongsTo implements RelationType
      * @param array<string, string> $orderBy Optional ordering
      */
     public function __construct(
-        public string $repository,
+        string $repository,
         public string $foreignKey,
-        public string $setter,
-        public array $orderBy = [],
+        string $setter,
+        array $orderBy = [],
     ) {
-    }
-
-    public function getType(): string
-    {
-        return 'belongsTo';
-    }
-
-    public function getRepository(): string
-    {
-        return $this->repository;
-    }
-
-    public function getSetter(): string
-    {
-        return $this->setter;
-    }
-
-    public function getOrderBy(): array
-    {
-        return $this->orderBy;
+        parent::__construct(RelationKind::BelongsTo, $repository, $setter, $orderBy);
     }
 }

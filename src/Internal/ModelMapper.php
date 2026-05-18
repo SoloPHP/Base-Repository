@@ -8,15 +8,18 @@ namespace Solo\BaseRepository\Internal;
  * @internal
  * @template TModel of object
  */
-final readonly class ModelMapper
+final class ModelMapper
 {
+    /** @var (\Closure(array<string, mixed>): TModel)|null */
+    private ?\Closure $mapper = null;
+
     /**
      * @param class-string<TModel> $modelClass
      * @param non-empty-string $mapperMethod
      */
     public function __construct(
-        private string $modelClass,
-        private string $mapperMethod = 'fromArray'
+        private readonly string $modelClass,
+        private readonly string $mapperMethod = 'fromArray',
     ) {
     }
 
@@ -26,12 +29,15 @@ final readonly class ModelMapper
      */
     public function map(array $row): object
     {
-        if (!is_callable([$this->modelClass, $this->mapperMethod])) {
-            throw new \RuntimeException("Mapper {$this->modelClass}::{$this->mapperMethod} not callable");
+        if ($this->mapper === null) {
+            if (!is_callable([$this->modelClass, $this->mapperMethod])) {
+                throw new \RuntimeException("Mapper {$this->modelClass}::{$this->mapperMethod} not callable");
+            }
+            /** @var \Closure(array<string, mixed>): TModel $closure */
+            $closure = \Closure::fromCallable([$this->modelClass, $this->mapperMethod]);
+            $this->mapper = $closure;
         }
 
-        /** @var TModel $obj */
-        $obj = ($this->modelClass)::{$this->mapperMethod}($row);
-        return $obj;
+        return ($this->mapper)($row);
     }
 }

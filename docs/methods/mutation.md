@@ -16,6 +16,10 @@ public function create(array $data): TModel
 
 **Returns:** Created model instance with ID populated.
 
+**Throws:**
+- `InvalidArgumentException` — when `$autoIncrement = false` on the repository and the PK is missing from `$data`.
+- `RuntimeException` — when the row cannot be found after insert (driver returned no `lastInsertId`, or table is not AUTO_INCREMENT and you forgot to set `$autoIncrement = false`).
+
 **Example:**
 
 ```php
@@ -37,7 +41,7 @@ echo $product->id; // 'PROD-6789abc123'
 ```
 
 ::: tip Custom IDs
-The repository automatically detects whether to use auto-increment or your provided ID. No configuration needed.
+For tables without AUTO_INCREMENT/SERIAL, set `protected bool $autoIncrement = false;` on the repository. The PK then becomes mandatory in `$data` and `create()` skips `lastInsertId()`. See [Custom IDs](/advanced/custom-ids).
 :::
 
 ---
@@ -113,8 +117,15 @@ echo "Inserted {$affected} records"; // "Inserted 3 records"
 ::: info Implementation Details
 - Each chunk of up to 500 records is sent as a single multi-row `INSERT … VALUES (…),(…),…` statement
 - Records within a chunk are grouped by their column-set, so heterogeneous records still produce one INSERT per group rather than per row
-- The entire operation is wrapped in a transaction
 - Returns total affected rows count
+:::
+
+::: warning No implicit transaction
+`insertMany()` does **not** wrap chunks in a transaction (consistent with `insert()` / `update()`). If one chunk fails mid-way, previously-inserted chunks remain committed. Wrap in `withTransaction()` for all-or-nothing semantics:
+
+```php
+$repo->withTransaction(fn($r) => $r->insertMany($records));
+```
 :::
 
 ---

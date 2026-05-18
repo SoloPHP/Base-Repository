@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Internal;
 
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Query\QueryBuilder;
+use Solo\BaseRepository\Relation\RelationKind;
 
 /**
  * Recursive criteria → WHERE-expression compiler.
@@ -43,7 +43,7 @@ use Doctrine\DBAL\Query\QueryBuilder;
  *
  * @phpstan-type Translation array{table: string, foreignKey: string, fields: list<string>}
  * @phpstan-type RelationMetaPivot array{
- *     type: 'belongsToMany',
+ *     kind: RelationKind::BelongsToMany,
  *     relatedTable: string,
  *     relatedPrimaryKey: string,
  *     pivotTable: string,
@@ -52,7 +52,7 @@ use Doctrine\DBAL\Query\QueryBuilder;
  *     translation?: Translation,
  * }
  * @phpstan-type RelationMetaSimple array{
- *     type: 'belongsTo'|'hasOne'|'hasMany',
+ *     kind: RelationKind::BelongsTo|RelationKind::HasOne|RelationKind::HasMany,
  *     foreignKey: string,
  *     relatedTable: string,
  *     relatedPrimaryKey: string,
@@ -98,19 +98,17 @@ final class CriteriaBuilder
         if ($criteria === []) {
             return null;
         }
-        $counter = 0;
-        return $this->buildGroup(
+        $ctx = new CompileContext(
             $qb,
-            $criteria,
-            'AND',
             $baseAlias,
             $basePrimaryKey,
             $compiledRelations,
             $configuredRelations,
             $useAlias,
             $currentLocale,
-            $counter,
+            new CompileCounter(),
         );
+        return $this->buildGroup($ctx, $criteria, 'AND');
     }
 
     /**
@@ -131,22 +129,10 @@ final class CriteriaBuilder
     }
 
     /**
-     * @param array<string|int, mixed>    $criteria
-     * @param array<string, RelationMeta> $compiledRelations
-     * @param array<string, true>         $configuredRelations
+     * @param array<string|int, mixed> $criteria
      */
-    private function buildGroup(
-        QueryBuilder $qb,
-        array $criteria,
-        string $connector,
-        string $baseAlias,
-        string $basePrimaryKey,
-        array $compiledRelations,
-        array $configuredRelations,
-        bool $useAlias,
-        ?string $currentLocale,
-        int &$counter,
-    ): ?string {
+    private function buildGroup(CompileContext $ctx, array $criteria, string $connector): ?string
+    {
         // Aggregate same-relation dot-keys so they share one EXISTS per group.
         $relationGroups = [];
         $clauses = [];
@@ -159,18 +145,7 @@ final class CriteriaBuilder
                         "List-form criteria entries must be arrays; got " . get_debug_type($value)
                     );
                 }
-                $sub = $this->buildGroup(
-                    $qb,
-                    $value,
-                    'AND',
-                    $baseAlias,
-                    $basePrimaryKey,
-                    $compiledRelations,
-                    $configuredRelations,
-                    $useAlias,
-                    $currentLocale,
-                    $counter,
-                );
+                $sub = $this->buildGroup($ctx, $value, 'AND');
                 if ($sub !== null) {
                     $clauses[] = $sub;
                 }
@@ -184,18 +159,7 @@ final class CriteriaBuilder
                         "'{$key}' group requires an array value; got " . get_debug_type($value)
                     );
                 }
-                $sub = $this->buildGroup(
-                    $qb,
-                    $value,
-                    $key,
-                    $baseAlias,
-                    $basePrimaryKey,
-                    $compiledRelations,
-                    $configuredRelations,
-                    $useAlias,
-                    $currentLocale,
-                    $counter,
-                );
+                $sub = $this->buildGroup($ctx, $value, $key);
                 if ($sub !== null) {
                     $clauses[] = $sub;
                 }
@@ -210,7 +174,7 @@ final class CriteriaBuilder
                 $isNotExists = str_starts_with($rawRelation, '!');
                 $relation = $isNotExists ? substr($rawRelation, 1) : $rawRelation;
 
-                if ($field !== '' && isset($compiledRelations[$relation])) {
+                if ($field !== '' && isset($ctx->compiledRelations[$relation])) {
                     $groupKey = ($isNotExists ? '!' : '') . $relation;
                     $relationGroups[$groupKey][$field] = $value;
                     continue;
@@ -218,7 +182,7 @@ final class CriteriaBuilder
 
                 // Configured but didn't compile (invalid type / missing repo property):
                 // silently drop, matching the prior contract for tolerant configs.
-                if (isset($configuredRelations[$relation])) {
+                if (isset($ctx->configuredRelations[$relation])) {
                     continue;
                 }
 
@@ -230,21 +194,11 @@ final class CriteriaBuilder
                 // Unknown relation without '!': fall through to qualified-column leaf.
             }
 
-            $clauses[] = $this->buildLeaf($qb, $key, $value, $baseAlias, $useAlias, $counter);
+            $clauses[] = $this->buildLeaf($ctx, $key, $value);
         }
 
         foreach ($relationGroups as $relationKey => $fields) {
-            $clauses[] = $this->buildRelationExists(
-                $qb,
-                $relationKey,
-                $fields,
-                $baseAlias,
-                $basePrimaryKey,
-                $compiledRelations,
-                $useAlias,
-                $currentLocale,
-                $counter,
-            );
+            $clauses[] = $this->buildRelationExists($ctx, $relationKey, $fields);
         }
 
         return $this->combine($connector, $clauses);
@@ -264,23 +218,17 @@ final class CriteriaBuilder
         return '(' . implode(' ' . $connector . ' ', $clauses) . ')';
     }
 
-    private function buildLeaf(
-        QueryBuilder $qb,
-        string $field,
-        mixed $value,
-        string $baseAlias,
-        bool $useAlias,
-        int &$counter,
-    ): string {
-        $column = $this->qualify($field, $baseAlias, $useAlias);
-        $param = '_cb_p' . (++$counter);
+    private function buildLeaf(CompileContext $ctx, string $field, mixed $value): string
+    {
+        $column = $this->qualify($field, $ctx->baseAlias, $ctx->useAlias);
+        $param = '_cb_p' . $ctx->counter->next();
 
         if ($value === null) {
             return "{$column} IS NULL";
         }
 
         if (!is_array($value)) {
-            $qb->setParameter($param, $value);
+            $ctx->qb->setParameter($param, $value);
             return "{$column} = :{$param}";
         }
 
@@ -291,11 +239,11 @@ final class CriteriaBuilder
         // List-form = IN(...) shortcut.
         if (is_int(array_key_first($value))) {
             $values = array_values($value);
-            $qb->setParameter($param, $values, $this->determineArrayParamType($values));
+            $ctx->qb->setParameter($param, $values, Identifier::arrayParamTypeFor($values));
             return "{$column} IN (:{$param})";
         }
 
-        return $this->buildOperatorLeaf($qb, $column, $param, $value);
+        return $this->buildOperatorLeaf($ctx->qb, $column, $param, $value);
     }
 
     /**
@@ -323,7 +271,7 @@ final class CriteriaBuilder
             if ($list === []) {
                 return $upperOp === 'IN' ? '1 = 0' : '1 = 1';
             }
-            $qb->setParameter($param, $list, $this->determineArrayParamType($list));
+            $qb->setParameter($param, $list, Identifier::arrayParamTypeFor($list));
             return "{$column} {$upperOp} (:{$param})";
         }
 
@@ -353,63 +301,53 @@ final class CriteriaBuilder
     }
 
     /**
-     * @param array<string, mixed>        $fields
-     * @param array<string, RelationMeta> $compiledRelations
+     * @param array<string, mixed> $fields
      */
-    private function buildRelationExists(
-        QueryBuilder $qb,
-        string $relationKey,
-        array $fields,
-        string $baseAlias,
-        string $basePrimaryKey,
-        array $compiledRelations,
-        bool $useAlias,
-        ?string $currentLocale,
-        int &$counter,
-    ): string {
+    private function buildRelationExists(CompileContext $ctx, string $relationKey, array $fields): string
+    {
         $isNotExists = str_starts_with($relationKey, '!');
         $relation = $isNotExists ? substr($relationKey, 1) : $relationKey;
-        $compiled = $compiledRelations[$relation];
+        $compiled = $ctx->compiledRelations[$relation];
 
         $relatedTable = $compiled['relatedTable'];
-        $pivotTable = $compiled['type'] === 'belongsToMany' ? $compiled['pivotTable'] : null;
+        $pivotTable = $compiled['kind'] === RelationKind::BelongsToMany ? $compiled['pivotTable'] : null;
 
         // MySQL forbids the UPDATE/DELETE target table inside a subquery FROM (incl. JOINs).
-        if (!$useAlias && ($relatedTable === $baseAlias || $pivotTable === $baseAlias)) {
+        if (!$ctx->useAlias && ($relatedTable === $ctx->baseAlias || $pivotTable === $ctx->baseAlias)) {
             throw new \InvalidArgumentException(
                 "Self-referential EXISTS on relation '{$relation}' is not supported in "
-                . "updateBy/forceDeleteBy: target table '{$baseAlias}' cannot appear in a subquery FROM."
+                . "updateBy/forceDeleteBy: target table '{$ctx->baseAlias}' cannot appear in a subquery FROM."
             );
         }
 
         $relatedPK = $compiled['relatedPrimaryKey'];
-        $relAlias = '_r' . (++$counter) . '_' . preg_replace('/[^A-Za-z0-9_]/', '_', $relation);
+        $relAlias = '_r' . $ctx->counter->next() . '_' . preg_replace('/[^A-Za-z0-9_]/', '_', $relation);
 
-        if ($compiled['type'] === 'belongsToMany') {
+        if ($compiled['kind'] === RelationKind::BelongsToMany) {
             $pivotAlias = $relAlias . '_p';
             $from = "{$compiled['pivotTable']} {$pivotAlias} INNER JOIN {$relatedTable} {$relAlias} "
                 . "ON {$relAlias}.{$relatedPK} = {$pivotAlias}.{$compiled['relatedPivotKey']}";
-            $correlation = "{$pivotAlias}.{$compiled['foreignPivotKey']} = {$baseAlias}.{$basePrimaryKey}";
+            $correlation = "{$pivotAlias}.{$compiled['foreignPivotKey']} = {$ctx->baseAlias}.{$ctx->basePrimaryKey}";
         } else {
             $foreignKey = $compiled['foreignKey'];
             $from = "{$relatedTable} {$relAlias}";
-            $correlation = $compiled['type'] === 'belongsTo'
-                ? "{$relAlias}.{$relatedPK} = {$baseAlias}.{$foreignKey}"
-                : "{$relAlias}.{$foreignKey} = {$baseAlias}.{$basePrimaryKey}";
+            $correlation = $compiled['kind'] === RelationKind::BelongsTo
+                ? "{$relAlias}.{$relatedPK} = {$ctx->baseAlias}.{$foreignKey}"
+                : "{$relAlias}.{$foreignKey} = {$ctx->baseAlias}.{$ctx->basePrimaryKey}";
         }
 
         $translation = $compiled['translation'] ?? null;
-        if ($translation !== null && $currentLocale !== null) {
+        if ($translation !== null && $ctx->currentLocale !== null) {
             $tAlias = $relAlias . '_t';
-            $localeParam = '_cb_loc' . (++$counter);
-            $qb->setParameter($localeParam, $currentLocale);
+            $localeParam = '_cb_loc' . $ctx->counter->next();
+            $ctx->qb->setParameter($localeParam, $ctx->currentLocale);
             $from .= " LEFT JOIN {$translation['table']} {$tAlias} "
                 . "ON {$tAlias}.{$translation['foreignKey']} = {$relAlias}.{$relatedPK} "
                 . "AND {$tAlias}.locale = :{$localeParam}";
             $fields = $this->rewriteTranslatedFields($fields, $translation['fields'], $tAlias);
         }
 
-        $body = $this->buildGroup($qb, $fields, 'AND', $relAlias, $relatedPK, [], [], true, null, $counter);
+        $body = $this->buildGroup($ctx->forSubquery($relAlias, $relatedPK), $fields, 'AND');
         $where = $body !== null ? "{$correlation} AND {$body}" : $correlation;
 
         return ($isNotExists ? 'NOT EXISTS' : 'EXISTS') . " (SELECT 1 FROM {$from} WHERE {$where})";
@@ -456,18 +394,5 @@ final class CriteriaBuilder
         if (!in_array(strtoupper($operator), self::ALLOWED_OPERATORS, true)) {
             throw new \InvalidArgumentException("Unsafe operator: {$operator}");
         }
-    }
-
-    /**
-     * @param array<int, mixed> $values
-     */
-    private function determineArrayParamType(array $values): ArrayParameterType
-    {
-        foreach ($values as $v) {
-            if (!is_int($v)) {
-                return ArrayParameterType::STRING;
-            }
-        }
-        return ArrayParameterType::INTEGER;
     }
 }

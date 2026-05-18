@@ -4,11 +4,27 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Internal;
 
+use Doctrine\DBAL\ArrayParameterType;
+
 /**
  * @internal
  */
 final class Identifier
 {
+    /**
+     * @param array<int, mixed> $values
+     */
+    public static function arrayParamTypeFor(array $values): ArrayParameterType
+    {
+        foreach ($values as $v) {
+            if (!is_int($v)) {
+                return ArrayParameterType::STRING;
+            }
+        }
+        return ArrayParameterType::INTEGER;
+    }
+
+
     public static function assertSafe(string $identifier): void
     {
         if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {

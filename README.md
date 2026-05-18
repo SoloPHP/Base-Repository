@@ -14,7 +14,7 @@ Lightweight PHP repository pattern with built-in soft delete, eager loading, and
 - Built-in aggregations (count, sum, avg, min, max)
 - Translation via `withLocale()` — auto LEFT JOIN, propagates into relation EXISTS
 - Transaction helpers with row locking (SELECT ... FOR UPDATE)
-- Auto-detect custom IDs (UUID, prefixed)
+- Custom IDs (UUID, ULID, prefixed) via `$autoIncrement = false`
 
 ## Installation
 ```bash

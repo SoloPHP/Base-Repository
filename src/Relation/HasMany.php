@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Relation;
 
-final readonly class HasMany implements RelationType
+final readonly class HasMany extends AbstractRelation
 {
     /**
      * @param string $repository Repository property name
@@ -13,30 +13,11 @@ final readonly class HasMany implements RelationType
      * @param array<string, string> $orderBy Optional ordering
      */
     public function __construct(
-        public string $repository,
+        string $repository,
         public string $foreignKey,
-        public string $setter,
-        public array $orderBy = [],
+        string $setter,
+        array $orderBy = [],
     ) {
-    }
-
-    public function getType(): string
-    {
-        return 'hasMany';
-    }
-
-    public function getRepository(): string
-    {
-        return $this->repository;
-    }
-
-    public function getSetter(): string
-    {
-        return $this->setter;
-    }
-
-    public function getOrderBy(): array
-    {
-        return $this->orderBy;
+        parent::__construct(RelationKind::HasMany, $repository, $setter, $orderBy);
     }
 }

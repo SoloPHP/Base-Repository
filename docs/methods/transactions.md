@@ -78,33 +78,27 @@ For more complex scenarios, use explicit transaction methods:
 
 ### beginTransaction()
 
-Start a new database transaction.
+Start a new database transaction. Throws `Doctrine\DBAL\Exception` on driver failure.
 
 ```php
-public function beginTransaction(): bool
+public function beginTransaction(): void
 ```
-
-**Returns:** `true` if transaction is active.
 
 ### commit()
 
-Commit the current transaction.
+Commit the current transaction. Throws `Doctrine\DBAL\Exception` if no transaction is active or the commit fails.
 
 ```php
-public function commit(): bool
+public function commit(): void
 ```
-
-**Returns:** `true` on success.
 
 ### rollBack()
 
-Roll back the current transaction.
+Roll back the current transaction. Throws `Doctrine\DBAL\Exception` if no transaction is active.
 
 ```php
-public function rollBack(): bool
+public function rollBack(): void
 ```
-
-**Returns:** `true` on success.
 
 ### inTransaction()
 

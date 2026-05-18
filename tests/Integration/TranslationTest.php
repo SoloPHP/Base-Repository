@@ -124,15 +124,6 @@ class TranslationTest extends TestCase
         $this->assertNull($products[0]->name);
     }
 
-    public function testWithoutLocaleClearsLocale(): void
-    {
-        $this->repository->withLocale('uk');
-        $this->repository->withoutLocale();
-
-        $products = $this->repository->findBy([]);
-        $this->assertNull($products[0]->name);
-    }
-
     public function testWithLocaleWithCriteria(): void
     {
         $products = $this->repository->withLocale('uk')->findBy(['price' => ['>' => 30]]);
@@ -197,21 +188,6 @@ class TranslationTest extends TestCase
     {
         $exists = $this->repository->withLocale('uk')->exists(['sku' => 'SKU-001']);
         $this->assertTrue($exists);
-    }
-
-    public function testMapToModel(): void
-    {
-        $product = $this->repository->mapToModel([
-            'id' => 99,
-            'sku' => 'MAP-001',
-            'price' => 12.50,
-            'name' => 'Mapped',
-            'description' => 'Desc',
-        ]);
-
-        $this->assertEquals(99, $product->id);
-        $this->assertEquals('MAP-001', $product->sku);
-        $this->assertEquals('Mapped', $product->name);
     }
 
     public function testWithLocalePropagatesToEagerLoadedRelations(): void

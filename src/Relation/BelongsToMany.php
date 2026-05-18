@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Solo\BaseRepository\Relation;
 
-final readonly class BelongsToMany implements RelationType
+final readonly class BelongsToMany extends AbstractRelation
 {
     /**
      * @param string $repository Repository property name
@@ -15,32 +15,13 @@ final readonly class BelongsToMany implements RelationType
      * @param array<string, string> $orderBy Optional ordering
      */
     public function __construct(
-        public string $repository,
+        string $repository,
         public string $pivot,
         public string $foreignPivotKey,
         public string $relatedPivotKey,
-        public string $setter,
-        public array $orderBy = [],
+        string $setter,
+        array $orderBy = [],
     ) {
-    }
-
-    public function getType(): string
-    {
-        return 'belongsToMany';
-    }
-
-    public function getRepository(): string
-    {
-        return $this->repository;
-    }
-
-    public function getSetter(): string
-    {
-        return $this->setter;
-    }
-
-    public function getOrderBy(): array
-    {
-        return $this->orderBy;
+        parent::__construct(RelationKind::BelongsToMany, $repository, $setter, $orderBy);
     }
 }

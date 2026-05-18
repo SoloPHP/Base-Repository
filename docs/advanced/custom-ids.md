@@ -1,10 +1,10 @@
 # Custom IDs
 
-The repository automatically detects whether to use auto-increment or a custom ID based on whether you provide the primary key in the data array.
+The repository supports both database-generated IDs (AUTO_INCREMENT / SERIAL / IDENTITY) and application-supplied IDs (UUID, ULID, prefixed). Behavior is controlled by the `$autoIncrement` flag and whether you pass the PK in `$data`.
 
 ## Auto-Increment (Default)
 
-When you don't provide an ID, the database generates one:
+`$autoIncrement = true` is the default. When you don't pass the PK, `create()` calls `lastInsertId()`:
 
 ```php
 $user = $repo->create([
@@ -14,6 +14,38 @@ $user = $repo->create([
 
 echo $user->id; // Auto-generated: 1, 2, 3, ...
 ```
+
+If you pass the PK explicitly on an AUTO_INCREMENT table, `create()` uses your value and skips `lastInsertId()`.
+
+## Manual PK (UUID, ULID, prefixed)
+
+For tables without AUTO_INCREMENT, set `protected bool $autoIncrement = false;` on the repository. The PK is then **required** in `$data` — `create()` throws `InvalidArgumentException` if it's missing:
+
+```php
+final class ProductRepository extends BaseRepository
+{
+    protected bool $autoIncrement = false;   // ← PK must be supplied
+
+    public function __construct(Connection $connection)
+    {
+        parent::__construct($connection, Product::class, 'products');
+    }
+}
+
+$product = $productRepo->create([
+    'id' => 'PROD-001',   // mandatory
+    'name' => 'Widget',
+    'price' => 99.99,
+]);
+
+// Missing PK → fail fast, before the INSERT
+$productRepo->create(['name' => 'Bad']);
+// → InvalidArgumentException: primary key "id" must be provided in $data when $autoIncrement = false.
+```
+
+::: tip Why the flag?
+Without `$autoIncrement = false`, a misconfigured create call would silently call `lastInsertId()` (which returns `0` for non-AUTO_INCREMENT tables) and then `find(0)` — leading to confusing "row not found" errors instead of a clear "you forgot the PK" message.
+:::
 
 ## Custom ID
 

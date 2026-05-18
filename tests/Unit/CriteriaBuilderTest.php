@@ -9,6 +9,7 @@ use Doctrine\DBAL\Query\QueryBuilder;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Solo\BaseRepository\Internal\CriteriaBuilder;
+use Solo\BaseRepository\Relation\RelationKind;
 
 class CriteriaBuilderTest extends TestCase
 {
@@ -303,7 +304,7 @@ class CriteriaBuilderTest extends TestCase
     {
         return [
             'tags' => [
-                'type' => 'hasMany',
+                'kind' => RelationKind::HasMany,
                 'foreignKey' => 'article_id',
                 'relatedTable' => 'tags',
                 'relatedPrimaryKey' => 'id',
@@ -331,7 +332,7 @@ class CriteriaBuilderTest extends TestCase
     {
         $compiled = [
             'category' => [
-                'type' => 'belongsTo',
+                'kind' => RelationKind::BelongsTo,
                 'foreignKey' => 'category_id',
                 'relatedTable' => 'categories',
                 'relatedPrimaryKey' => 'id',
@@ -346,7 +347,7 @@ class CriteriaBuilderTest extends TestCase
     {
         $compiled = [
             'tags' => [
-                'type' => 'belongsToMany',
+                'kind' => RelationKind::BelongsToMany,
                 'relatedTable' => 'tags',
                 'relatedPrimaryKey' => 'id',
                 'pivotTable' => 'article_tag',
@@ -380,7 +381,7 @@ class CriteriaBuilderTest extends TestCase
     {
         $compiled = [
             'children' => [
-                'type' => 'hasMany',
+                'kind' => RelationKind::HasMany,
                 'foreignKey' => 'parent_id',
                 'relatedTable' => 't',  // same as base alias=table when useAlias=false
                 'relatedPrimaryKey' => 'id',
@@ -426,7 +427,7 @@ class CriteriaBuilderTest extends TestCase
     {
         return [
             'tags' => [
-                'type' => 'hasMany',
+                'kind' => RelationKind::HasMany,
                 'foreignKey' => 'article_id',
                 'relatedTable' => 'tags',
                 'relatedPrimaryKey' => 'id',

@@ -340,6 +340,13 @@ class BaseRepositoryTest extends TestCase
         $this->repository->commit();
         $this->assertFalse($this->repository->inTransaction());
 
+        // Manual rollBack discards the transaction
+        $this->repository->beginTransaction();
+        $this->repository->create(['name' => 'Discarded', 'email' => 'd@example.com']);
+        $this->repository->rollBack();
+        $this->assertFalse($this->repository->inTransaction());
+        $this->assertEquals(0, $this->repository->count(['email' => 'd@example.com']));
+
         // withTransaction success
         $result = $this->repository->withTransaction(function ($repo) {
             $repo->create(['name' => 'User 1', 'email' => 'user1@example.com']);
