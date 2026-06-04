@@ -197,6 +197,61 @@ $repo->withTransaction(function ($repo) use ($ids) {
 
 ---
 
+## withLock()
+
+Run a callback while holding a cross-process **advisory (named) lock** scoped to a single
+record, then release it. Unlike `lockForUpdate()`, it does **not** require the row to exist and
+does **not** need a surrounding transaction — making it the tool for idempotency: ensuring the
+same critical section for the same record never runs concurrently, even when reached from
+multiple paths (a background job, its retry, a manual call).
+
+```php
+public function withLock(int|string $id, callable $callback, int $timeout = 10): mixed
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$id` | `int\|string` | Record id the critical section applies to |
+| `$callback` | `callable` | Receives the repository; its return value is returned by `withLock()` |
+| `$timeout` | `int` | Seconds to wait for the lock before failing (default `10`) |
+
+**Behavior:**
+- Acquires the lock → runs `$callback($this)` → returns its result → releases the lock.
+- The lock is **always released**, including when `$callback` throws.
+- If the lock is held by another process, waits up to `$timeout` seconds; on expiry throws
+  `Solo\BaseRepository\LockTimeoutException` (it does **not** silently continue).
+- The lock key encodes `database + table + id`, so locks for different tables, ids, or tenants
+  (databases on the same server) never collide.
+
+**Example:**
+
+```php
+use Solo\BaseRepository\LockTimeoutException;
+
+try {
+    $invoice = $invoiceRepo->withLock($orderId, function ($repo) use ($orderId) {
+        // Runs once per order even if the job and its retry overlap.
+        if ($repo->findOneBy(['order_id' => $orderId]) !== null) {
+            return null; // already processed
+        }
+        return $repo->create(['order_id' => $orderId, 'status' => 'issued']);
+    }, timeout: 5);
+} catch (LockTimeoutException $e) {
+    // Someone else holds the lock — re-queue and try later.
+}
+```
+
+::: warning Database Support
+Backed by `GET_LOCK` on MySQL/MariaDB and `pg_advisory_lock` on PostgreSQL. Other platforms
+(SQLite, Oracle, SQL Server, DB2) throw `\RuntimeException` — advisory locking is not implemented
+for them. The lock is tied to the database session/connection and is released automatically if
+that connection drops.
+:::
+
+---
+
 ## Cross-Repository Transactions
 
 All repositories share the same connection, so transactions work across them:

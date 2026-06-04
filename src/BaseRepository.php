@@ -6,6 +6,7 @@ namespace Solo\BaseRepository;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
+use Solo\BaseRepository\Internal\AdvisoryLock;
 use Solo\BaseRepository\Internal\CriteriaBuilder;
 use Solo\BaseRepository\Internal\EagerLoadingService;
 use Solo\BaseRepository\Internal\Identifier;
@@ -49,6 +50,7 @@ abstract class BaseRepository implements RepositoryInterface
     protected ?EagerLoadingService $eagerLoadingService = null;
     protected ?TranslationService $translationService = null;
     private ?PivotService $pivotService = null;
+    private ?AdvisoryLock $advisoryLock = null;
 
     /** Active locale for the next query. */
     private ?string $currentLocale = null;
@@ -767,6 +769,42 @@ abstract class BaseRepository implements RepositoryInterface
             [$ids],
             [Identifier::arrayParamTypeFor($ids)]
         );
+    }
+
+    /**
+     * Run $callback while holding a cross-process advisory lock for this record,
+     * releasing it on any outcome (including an exception inside $callback).
+     *
+     * @template TReturn
+     * @param int|string $id Record id the critical section applies to
+     * @param callable(RepositoryInterface<TModel>): TReturn $callback
+     * @param int $timeout Seconds to wait for the lock before failing
+     * @return TReturn
+     * @throws LockTimeoutException when the lock cannot be acquired within $timeout
+     */
+    public function withLock(
+        int|string $id,
+        callable $callback,
+        int $timeout = RepositoryInterface::DEFAULT_LOCK_TIMEOUT
+    ): mixed {
+        $resource = $this->lockResourceFor($id);
+        $lock = $this->advisoryLock ??= new AdvisoryLock($this->connection);
+
+        $lock->acquire($resource, $timeout);
+        try {
+            return $callback($this);
+        } finally {
+            $lock->release($resource);
+        }
+    }
+
+    /**
+     * Build the advisory-lock resource name. Includes the database so tenants
+     * sharing one server don't collide, the table, and the record id.
+     */
+    private function lockResourceFor(int|string $id): string
+    {
+        return ($this->connection->getDatabase() ?? '') . '.' . $this->table . '.' . $id;
     }
 
     /**

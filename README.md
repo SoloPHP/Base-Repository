@@ -13,7 +13,7 @@ Lightweight PHP repository pattern with built-in soft delete, eager loading, and
 - Rich criteria syntax: operators, BETWEEN, OR/AND groups, and correlated EXISTS via relation dot-notation
 - Built-in aggregations (count, sum, avg, min, max)
 - Translation via `withLocale()` — auto LEFT JOIN, propagates into relation EXISTS
-- Transaction helpers with row locking (SELECT ... FOR UPDATE)
+- Transaction helpers with row locking (`SELECT ... FOR UPDATE`) and cross-process advisory locks (`withLock()`) for idempotency
 - Custom IDs (UUID, ULID, prefixed) via `$autoIncrement = false`
 
 ## Installation
@@ -22,6 +22,10 @@ composer require solophp/base-repository
 ```
 
 **Requirements:** PHP 8.3+, Doctrine DBAL ^4.3
+
+**Database:** any Doctrine DBAL platform. Locking is platform-specific:
+`lockForUpdate()` — MySQL/MariaDB, PostgreSQL, Oracle; `withLock()` advisory locking —
+MySQL/MariaDB (`GET_LOCK`) and PostgreSQL (`pg_advisory_lock`). Other platforms throw on these calls.
 
 ## Quick Example
 ```php

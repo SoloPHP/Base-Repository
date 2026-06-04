@@ -11,6 +11,9 @@ use Doctrine\DBAL\Connection;
  */
 interface RepositoryInterface
 {
+    /** Default seconds withLock() waits for an advisory lock before failing. */
+    public const DEFAULT_LOCK_TIMEOUT = 10;
+
     /**
      * @return non-empty-string
      */
@@ -222,6 +225,27 @@ interface RepositoryInterface
      * @param int|string|array<int|string> $id Single ID or array of IDs
      */
     public function lockForUpdate(int|string|array $id): void;
+
+    /**
+     * Run $callback while holding a cross-process advisory lock scoped to this
+     * repository's database + table + the given record id, then release it.
+     *
+     * Guarantees the critical section runs serially per record even when reached
+     * from several paths (background job, its retry, manual call) — i.e. for
+     * idempotency. The lock is released on any outcome, including an exception
+     * thrown inside $callback.
+     *
+     * Supported on MySQL/MariaDB (GET_LOCK) and PostgreSQL (pg_advisory_lock);
+     * other platforms throw \RuntimeException.
+     *
+     * @template TReturn
+     * @param int|string $id Record id the critical section applies to
+     * @param callable(RepositoryInterface<TModel>): TReturn $callback
+     * @param int $timeout Seconds to wait for the lock before failing
+     * @return TReturn
+     * @throws LockTimeoutException when the lock cannot be acquired within $timeout
+     */
+    public function withLock(int|string $id, callable $callback, int $timeout = self::DEFAULT_LOCK_TIMEOUT): mixed;
 
     public function beginTransaction(): void;
 
