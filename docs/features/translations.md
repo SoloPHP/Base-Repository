@@ -78,16 +78,20 @@ This follows the same pattern as `with()` for eager loading.
 
 ### withLocale()
 
-Set locale for the next query. Adds LEFT JOIN with translation table.
+Set locale for the next query. Adds LEFT JOIN with translation table. Pass an
+optional second argument to enable a [fallback locale](#fallback-locale).
 
 ```php
-public function withLocale(string $locale): static
+public function withLocale(string $locale, ?string $fallbackLocale = null): static
 ```
 
 ```php
 $product = $repo->withLocale('en')->find(1);
 $products = $repo->withLocale('uk')->findBy(['status' => 'active']);
 $products = $repo->withLocale('de')->findAll();
+
+// With fallback: fields empty/missing in 'ru' are taken from 'uk'
+$products = $repo->withLocale('ru', 'uk')->findBy([]);
 ```
 
 ### withoutLocale()
@@ -113,7 +117,7 @@ When `withLocale()` is called, the next query will:
 
 1. **LEFT JOIN** the translation table on `foreignKey = primaryKey AND locale = :locale`
 2. **Select** all configured translated fields from the translation table
-3. **Reset** the locale after building the query
+3. **Reset** the locale after the query executes — so it never leaks into the next query
 
 ```sql
 SELECT p.*, tr.name, tr.description
@@ -123,6 +127,51 @@ LEFT JOIN product_translations tr
 ```
 
 LEFT JOIN ensures that records without translations are still returned (translated fields will be `null`).
+
+---
+
+## Fallback Locale
+
+Pass a second locale to `withLocale()` to fill values that are **missing or empty**
+in the active locale from a fallback — useful for showing the default-language value
+until a translation is provided.
+
+```php
+// Show Russian; for any field with no Russian value yet, use Ukrainian.
+$products = $repo->withLocale('ru', 'uk')->findBy(['status' => 'active']);
+```
+
+A second LEFT JOIN on the fallback locale is added and every translated field is
+`COALESCE`d over it:
+
+```sql
+SELECT p.*,
+       COALESCE(NULLIF(tr.name, ''), tr_fb.name)              AS name,
+       COALESCE(NULLIF(tr.description, ''), tr_fb.description) AS description
+FROM products p
+LEFT JOIN product_translations tr
+    ON tr.product_id = p.id AND tr.locale = 'ru'
+LEFT JOIN product_translations tr_fb
+    ON tr_fb.product_id = p.id AND tr_fb.locale = 'uk'
+```
+
+::: warning Empty strings count as "missing"
+`NULLIF(tr.field, '')` means an **empty string** in the active locale is treated as
+"no translation" and replaced by the fallback value. If you need to keep intentional
+empty values, don't store them as empty strings (use `NULL`), or omit the fallback.
+:::
+
+- The fallback applies per field: a field that **does** have a value in the active
+  locale is never overridden.
+- When `$fallbackLocale` is `null`, equal to `$locale`, or the repository has no
+  `$translationConfig`, no second JOIN is added — behaviour is identical to a plain
+  `withLocale($locale)`.
+- The fallback **propagates to eager-loaded relations** together with the active
+  locale (see below).
+- Fallback (and the empty-string check) targets **text fields**. Don't list
+  numeric/date columns in `fields` when using a fallback — `NULLIF(col, '')` makes
+  MySQL silently replace a legitimate `0`, and PostgreSQL rejects the query with a
+  type error.
 
 ---
 
@@ -197,15 +246,16 @@ class ProductRepository extends BaseRepository
 
 ### Combining with Eager Loading
 
-Translations work with eager loading. When `withLocale()` is used together with `with()`, the locale automatically propagates to all related repositories:
+Translations work with eager loading. When `withLocale()` is used together with `with()`, the locale — and the fallback locale, if any — automatically propagates to all related repositories:
 
 ```php
 $products = $repo
     ->with(['category', 'tags'])
-    ->withLocale('uk')
+    ->withLocale('ru', 'uk')
     ->findBy(['status' => 'active']);
 
-// Both products AND their related categories/tags will have translated fields
+// Both products AND their related categories/tags get translated fields,
+// resolved with the same 'ru' → 'uk' fallback rule
 // (if their repositories also have $translationConfig defined)
 ```
 
@@ -244,6 +294,10 @@ $users->withLocale('uk')->findBy([
     'articles.slug'  => 'hello',    // → relation alias
 ]);
 ```
+
+::: warning Fallback does not apply to filtering
+A [fallback locale](#fallback-locale) affects only the **values returned** in the SELECT. Relation `EXISTS` filters match strictly against the requested locale: a row whose translated field exists *only* in the fallback locale will **not** match `relation.translatedField`, even though it would be shown via the fallback. This is intentional — a filter is a predicate over the actual data for the requested locale, not over the presentation value.
+:::
 
 See [Criteria → Relation Filters](/features/criteria#relation-filters) for relation criteria details.
 

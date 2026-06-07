@@ -55,6 +55,9 @@ abstract class BaseRepository implements RepositoryInterface
     /** Active locale for the next query. */
     private ?string $currentLocale = null;
 
+    /** Optional fallback locale: fields empty in the active locale fall back to it. */
+    private ?string $fallbackLocale = null;
+
     /** @var array<string, RelationMeta>|null Memoized — invalidated only on relationConfig mutation, which we don't support. */
     private ?array $compiledRelationsCache = null;
 
@@ -138,7 +141,13 @@ abstract class BaseRepository implements RepositoryInterface
         $qb = $this->queryFactory->tableSelectAll();
 
         if ($this->translationService !== null && $this->currentLocale !== null) {
-            $this->translationService->applyJoin($qb, $this->getTableAlias(), $this->primaryKey, $this->currentLocale);
+            $this->translationService->applyJoin(
+                $qb,
+                $this->getTableAlias(),
+                $this->primaryKey,
+                $this->currentLocale,
+                $this->fallbackLocale,
+            );
         }
 
         return $qb;
@@ -148,11 +157,16 @@ abstract class BaseRepository implements RepositoryInterface
      * Set locale for translation JOIN.
      * When set, the next query will LEFT JOIN the translation table and include translated fields.
      *
+     * Pass $fallbackLocale to COALESCE fields that are empty/missing in $locale onto
+     * the fallback locale (e.g. show the default-language value until translated).
+     *
      * Usage: $repo->withLocale('uk')->findBy($criteria)
+     *        $repo->withLocale('ru', 'uk')->findBy($criteria)
      */
-    public function withLocale(string $locale): static
+    public function withLocale(string $locale, ?string $fallbackLocale = null): static
     {
         $this->currentLocale = $locale;
+        $this->fallbackLocale = $fallbackLocale;
         return $this;
     }
 
@@ -162,6 +176,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function withoutLocale(): static
     {
         $this->currentLocale = null;
+        $this->fallbackLocale = null;
         return $this;
     }
 
@@ -179,6 +194,7 @@ abstract class BaseRepository implements RepositoryInterface
             return $fn();
         } finally {
             $this->currentLocale = null;
+            $this->fallbackLocale = null;
         }
     }
 
@@ -865,7 +881,15 @@ abstract class BaseRepository implements RepositoryInterface
         $grouped = $service->groupByTopLevel($relations);
 
         foreach ($grouped as $relation => $nested) {
-            $service->loadRelation($items, $relation, $this->relationConfig, $this, $nested, $this->currentLocale);
+            $service->loadRelation(
+                $items,
+                $relation,
+                $this->relationConfig,
+                $this,
+                $nested,
+                $this->currentLocale,
+                $this->fallbackLocale,
+            );
         }
 
         return $items;

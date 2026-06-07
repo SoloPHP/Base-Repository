@@ -12,7 +12,7 @@ Lightweight PHP repository pattern with built-in soft delete, eager loading, and
 - Eager loading (BelongsTo, HasOne, HasMany, BelongsToMany)
 - Rich criteria syntax: operators, BETWEEN, OR/AND groups, and correlated EXISTS via relation dot-notation
 - Built-in aggregations (count, sum, avg, min, max)
-- Translation via `withLocale()` — auto LEFT JOIN, propagates into relation EXISTS
+- Translation via `withLocale()` with optional fallback locale — auto LEFT JOIN, propagates into relations
 - Transaction helpers with row locking (`SELECT ... FOR UPDATE`) and cross-process advisory locks (`withLock()`) for idempotency
 - Custom IDs (UUID, ULID, prefixed) via `$autoIncrement = false`
 

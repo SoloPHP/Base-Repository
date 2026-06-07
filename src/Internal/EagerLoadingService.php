@@ -55,8 +55,10 @@ final class EagerLoadingService
     }
 
     /**
-     * Load a specific relation. If $locale is non-null, propagates it to the
-     * related repository via withLocale() before fetching.
+     * Load a specific relation. If $locale is non-null, propagates it — together
+     * with the optional $fallbackLocale — to the related repository via withLocale()
+     * before fetching, so related records resolve translations under the same locale
+     * rules as the parent.
      *
      * @param array<string, RelationType> $relationConfig
      */
@@ -67,6 +69,7 @@ final class EagerLoadingService
         object $repository,
         array $nested = [],
         ?string $locale = null,
+        ?string $fallbackLocale = null,
     ): void {
         $config = $relationConfig[$relation] ?? null;
         if (!$config instanceof AbstractRelation) {
@@ -78,7 +81,7 @@ final class EagerLoadingService
         $relatedPrimaryKey = $relatedRepository->getPrimaryKeyName();
 
         if ($locale !== null && method_exists($relatedRepository, 'withLocale')) {
-            $relatedRepository->withLocale($locale);
+            $relatedRepository->withLocale($locale, $fallbackLocale);
         }
 
         if (!empty($nested) && method_exists($relatedRepository, 'with')) {
@@ -118,6 +121,13 @@ final class EagerLoadingService
             $ids = $this->pluckIds($items, $parentPrimaryKey);
             $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
             $this->joinHasOne($items, $related, $config->foreignKey, $setter, $parentPrimaryKey);
+        }
+
+        // The related repo's locale is one-shot and is cleared only when its findBy
+        // runs (via withLocaleScope). If a branch above skipped findBy (empty ids or
+        // empty pivot), clear it here so it can't leak into the repo's next query.
+        if ($locale !== null && method_exists($relatedRepository, 'withoutLocale')) {
+            $relatedRepository->withoutLocale();
         }
     }
 

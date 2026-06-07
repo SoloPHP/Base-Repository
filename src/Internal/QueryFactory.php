@@ -27,7 +27,7 @@ final readonly class QueryFactory
     public function tableSelectAll(): QueryBuilder
     {
         return $this->connection->createQueryBuilder()
-            ->select('*')
+            ->select($this->tableAlias . '.*')
             ->from($this->table, $this->tableAlias);
     }
 

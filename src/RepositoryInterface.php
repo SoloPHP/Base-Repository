@@ -178,10 +178,15 @@ interface RepositoryInterface
      * Set locale for translation JOIN.
      * The next query will LEFT JOIN the translation table and include translated fields.
      *
+     * Pass $fallbackLocale to COALESCE fields that are empty/missing in $locale onto
+     * the fallback locale (e.g. show the default-language value until translated).
+     * The fallback propagates to eager-loaded relations together with $locale.
+     *
      * @param string $locale
+     * @param string|null $fallbackLocale
      * @return static
      */
-    public function withLocale(string $locale): static;
+    public function withLocale(string $locale, ?string $fallbackLocale = null): static;
 
     /**
      * Clear locale (disable translation JOIN)

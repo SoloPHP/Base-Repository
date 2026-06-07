@@ -32,25 +32,61 @@ final readonly class TranslationService
 
     /**
      * Apply LEFT JOIN with translation table to the query builder.
+     *
+     * When $fallbackLocale is given and differs from $locale, a second JOIN on the
+     * fallback locale is added and each field is COALESCE'd — a value empty or
+     * missing in the primary locale falls back to it, so callers never get a NULL
+     * where the fallback has a value.
      */
-    public function applyJoin(QueryBuilder $qb, string $tableAlias, string $primaryKey, string $locale): void
-    {
+    public function applyJoin(
+        QueryBuilder $qb,
+        string $tableAlias,
+        string $primaryKey,
+        string $locale,
+        ?string $fallbackLocale = null,
+    ): void {
+        $useFallback = $fallbackLocale !== null && $fallbackLocale !== $locale;
+
         $qb->leftJoin(
             $tableAlias,
             $this->table,
             'tr',
-            sprintf(
-                'tr.%s = %s.%s AND tr.locale = :tr_locale',
-                $this->foreignKey,
-                $tableAlias,
-                $primaryKey
-            )
+            $this->joinOn('tr', $tableAlias, $primaryKey, 'tr_locale')
         );
+        $qb->setParameter('tr_locale', $locale);
 
-        foreach ($this->fields as $field) {
-            $qb->addSelect('tr.' . $field);
+        if ($useFallback) {
+            $qb->leftJoin(
+                $tableAlias,
+                $this->table,
+                'tr_fb',
+                $this->joinOn('tr_fb', $tableAlias, $primaryKey, 'tr_fb_locale')
+            );
+            $qb->setParameter('tr_fb_locale', $fallbackLocale);
         }
 
-        $qb->setParameter('tr_locale', $locale);
+        foreach ($this->fields as $field) {
+            $qb->addSelect(
+                $useFallback
+                    ? sprintf("COALESCE(NULLIF(tr.%s, ''), tr_fb.%s) AS %s", $field, $field, $field)
+                    : 'tr.' . $field
+            );
+        }
+    }
+
+    /**
+     * Build the ON condition for a translation LEFT JOIN under the given alias.
+     */
+    private function joinOn(string $alias, string $tableAlias, string $primaryKey, string $localeParam): string
+    {
+        return sprintf(
+            '%s.%s = %s.%s AND %s.locale = :%s',
+            $alias,
+            $this->foreignKey,
+            $tableAlias,
+            $primaryKey,
+            $alias,
+            $localeParam
+        );
     }
 }
