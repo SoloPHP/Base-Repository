@@ -50,7 +50,7 @@ class UserRepository extends BaseRepository
 | `$tableAlias` | `?string` | `null` | Table alias for queries (defaults to first letter of table name) |
 | `$deletedAtColumn` | `?string` | `null` | Column for soft delete timestamp. Set to enable soft delete |
 | `$relationConfig` | `array` | `[]` | Relation definitions for eager loading |
-| `$translationConfig` | `?array` | `null` | Translation table config. Set to enable `withLocale()` |
+| `$translationConfig` | `?array` | `null` | Translation table config. Set to enable `withLocale()` and `seedTranslations()` |
 
 ## Feature Auto-Detection
 

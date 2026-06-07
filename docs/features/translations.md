@@ -175,6 +175,86 @@ empty values, don't store them as empty strings (use `NULL`), or omit the fallba
 
 ---
 
+## Writing Translations
+
+Everything above is read-side (the `LEFT JOIN`). To **create** translation rows,
+use `seedTranslations()` — a helper for the common "fill every active locale on
+create" case.
+
+### seedTranslations()
+
+Insert one translation row per locale from a single set of `$values`, skipping
+any locale that already has a row.
+
+```php
+public function seedTranslations(int|string $id, array $locales, array $values): int
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `$id` | `int\|string` | Foreign-key value linking the rows to the record (matches `foreignKey`) |
+| `$locales` | `list<string>` | Locales to seed |
+| `$values` | `array<string, scalar\|null>` | Translated field => value pairs |
+
+**Returns:** Number of rows actually inserted (locales that already had a row are skipped).
+
+**Example:** seed all active locales right after creating the entity, so reads in
+any locale return a value immediately (the operator translates them later):
+
+```php
+$product = $repo->create(['sku' => 'SKU-001', 'price' => 29.99]);
+
+// Every locale starts from the operator's initial text.
+$repo->seedTranslations($product->id, ['uk', 'en', 'de'], [
+    'name'        => 'Product 1',
+    'description' => 'Initial description',
+]);
+```
+
+Only keys that appear in `$translationConfig['fields']` are written — extra keys
+in `$values` are ignored, so you can pass a whole form payload:
+
+```php
+// 'sku' and 'price' are not translated fields → silently skipped.
+$repo->seedTranslations($id, ['uk'], [
+    'name'  => 'Назва',
+    'sku'   => 'SKU-001',   // ignored
+    'price' => 29.99,       // ignored
+]);
+```
+
+::: info Idempotent — existing rows are preserved
+Skipping relies on a `UNIQUE(foreignKey, locale)` constraint on the translation
+table (see the [schema above](#setup)). Re-running `seedTranslations()` for the
+same record never overwrites an existing locale — it only fills in the missing
+ones. Use it to back-fill locales added after the entity was created:
+
+```php
+// Later a new locale goes live — back-fill only it, existing rows untouched.
+$repo->seedTranslations($id, ['uk', 'en', 'de', 'pl'], $values); // inserts 'pl' only
+```
+:::
+
+::: tip Single-locale edits
+`seedTranslations()` is for the create/back-fill case. To update one locale's
+text, write the translation row directly — e.g. a dedicated translation
+repository with `updateBy(['product_id' => $id, 'locale' => 'uk'], $values)`.
+:::
+
+::: warning Cross-platform note
+The skip is emitted per platform: `INSERT IGNORE` (MySQL/MariaDB),
+`INSERT OR IGNORE` (SQLite), and `INSERT … ON CONFLICT DO NOTHING` (PostgreSQL
+and others). All three require the `UNIQUE(foreignKey, locale)` constraint to
+recognise a duplicate.
+:::
+
+When the repository has no `$translationConfig`, or `$locales` is empty, or none
+of `$values` matches a translated field, the call is a no-op and returns `0`.
+
+---
+
 ## Model Setup
 
 Your model should accept translated fields as nullable:

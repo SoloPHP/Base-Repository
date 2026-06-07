@@ -368,6 +368,32 @@ $articleRepo->sync('tags', $article->id, []);
 
 ---
 
+## seedTranslations()
+
+Insert one translation row per locale from a single set of values, skipping
+locales that already have a row. Available when `$translationConfig` is set.
+
+```php
+public function seedTranslations(int|string $id, array $locales, array $values): int
+```
+
+**Returns:** Number of rows actually inserted (existing locales are skipped).
+
+**Example:**
+
+```php
+$product = $repo->create(['sku' => 'SKU-001', 'price' => 29.99]);
+$repo->seedTranslations($product->id, ['uk', 'en', 'de'], [
+    'name'        => 'Product 1',
+    'description' => 'Initial description',
+]);
+```
+
+See [Translations → Writing Translations](/features/translations#writing-translations)
+for idempotency, field filtering, and cross-platform behavior.
+
+---
+
 ## Soft Delete Methods
 
 These methods are available when `$deletedAtColumn` is configured:

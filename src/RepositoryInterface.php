@@ -196,6 +196,23 @@ interface RepositoryInterface
     public function withoutLocale(): static;
 
     /**
+     * Seed a translation row for each locale in $locales from $values, skipping
+     * locales that already have one (insert-or-ignore against the translation
+     * table's UNIQUE(foreignKey, locale) constraint).
+     *
+     * Intended for entity creation: every active locale starts from the initial
+     * text and can be translated later, so reads never hit a missing translation.
+     * Only keys present in `$translationConfig['fields']` are written; a no-op
+     * when the repository has no `$translationConfig` or $locales is empty.
+     *
+     * @param int|string $id Foreign-key value linking the translation rows to the record
+     * @param list<string> $locales Locales to seed
+     * @param array<string, scalar|null> $values Translated field => value pairs
+     * @return int Rows actually inserted (locales that already existed are skipped)
+     */
+    public function seedTranslations(int|string $id, array $locales, array $values): int;
+
+    /**
      * Attach related IDs to a BelongsToMany relation via pivot table.
      *
      * @param string $relation Relation name from $relationConfig

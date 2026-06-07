@@ -419,6 +419,88 @@ class TranslationTest extends TestCase
         $this->assertNull($cats[0]->title); // no translation JOIN => title stays null
     }
 
+    public function testSeedTranslationsInsertsMissingLocales(): void
+    {
+        // Product 2 already has 'uk' (seeded in setUp) → it is skipped; en + de are new.
+        $inserted = $this->repository->seedTranslations(
+            2,
+            ['uk', 'en', 'de'],
+            ['name' => 'Seed name', 'description' => 'Seed desc'],
+        );
+
+        $this->assertSame(2, $inserted);
+
+        $en = $this->connection->fetchAssociative(
+            "SELECT name, description FROM product_translations WHERE product_id = 2 AND locale = 'en'"
+        );
+        $this->assertEquals('Seed name', $en['name']);
+        $this->assertEquals('Seed desc', $en['description']);
+
+        // The pre-existing 'uk' row must stay untouched.
+        $uk = $this->connection->fetchAssociative(
+            "SELECT name FROM product_translations WHERE product_id = 2 AND locale = 'uk'"
+        );
+        $this->assertEquals('Товар 2', $uk['name']);
+    }
+
+    public function testSeedTranslationsIsIdempotent(): void
+    {
+        // Product 1 already has both 'uk' and 'en' → nothing inserted, originals kept.
+        $inserted = $this->repository->seedTranslations(1, ['uk', 'en'], ['name' => 'Overwrite?']);
+
+        $this->assertSame(0, $inserted);
+
+        $uk = $this->connection->fetchOne(
+            "SELECT name FROM product_translations WHERE product_id = 1 AND locale = 'uk'"
+        );
+        $this->assertEquals('Товар 1', $uk);
+    }
+
+    public function testSeedTranslationsOnlyWritesConfiguredFields(): void
+    {
+        // 'sku' is not in translationConfig['fields'] and must be ignored (no such column).
+        $inserted = $this->repository->seedTranslations(2, ['fr'], ['name' => 'Nom', 'sku' => 'X']);
+
+        $this->assertSame(1, $inserted);
+
+        $row = $this->connection->fetchAssociative(
+            "SELECT name, description FROM product_translations WHERE product_id = 2 AND locale = 'fr'"
+        );
+        $this->assertEquals('Nom', $row['name']);
+        $this->assertNull($row['description']); // not provided → left NULL
+    }
+
+    public function testSeedTranslationsNoOpWhenLocalesEmpty(): void
+    {
+        $this->assertSame(0, $this->repository->seedTranslations(2, [], ['name' => 'x']));
+    }
+
+    public function testSeedTranslationsNoOpWhenNoConfiguredFieldsProvided(): void
+    {
+        // None of the keys map to translationConfig['fields'] → no statement issued.
+        $inserted = $this->repository->seedTranslations(2, ['fr'], ['unknown' => 'x']);
+
+        $this->assertSame(0, $inserted);
+        $count = $this->connection->fetchOne(
+            "SELECT COUNT(*) FROM product_translations WHERE product_id = 2 AND locale = 'fr'"
+        );
+        $this->assertEquals(0, $count);
+    }
+
+    public function testSeedTranslationsNoOpWithoutTranslationConfig(): void
+    {
+        $this->connection->executeStatement('
+            CREATE TABLE simple_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title VARCHAR(255) NOT NULL
+            )
+        ');
+
+        $repo = new NonTranslatableRepository($this->connection);
+
+        $this->assertSame(0, $repo->seedTranslations(1, ['uk', 'en'], ['title' => 'x']));
+    }
+
     private function createCategoryProductSchema(): void
     {
         $this->connection->executeStatement('

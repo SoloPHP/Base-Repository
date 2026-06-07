@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Solo\BaseRepository;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\DBAL\Query\QueryBuilder;
 use Solo\BaseRepository\Internal\AdvisoryLock;
 use Solo\BaseRepository\Internal\CriteriaBuilder;
@@ -233,6 +235,76 @@ abstract class BaseRepository implements RepositoryInterface
     public function getTranslationConfig(): ?array
     {
         return $this->translationConfig;
+    }
+
+    /**
+     * Seed a translation row for each of $locales using $values, skipping locales
+     * that already have one. Intended for entity creation: every active locale
+     * starts from the operator's initial text (typically the default-language
+     * value) and can be translated later, so reads never hit a missing
+     * translation. Only keys present in translationConfig['fields'] are written;
+     * a no-op when there is no translationConfig or $locales is empty.
+     *
+     * An existing (foreignKey, locale) row is left untouched — skipping uses the
+     * platform's insert-or-ignore form (MySQL INSERT IGNORE, SQLite INSERT OR
+     * IGNORE, otherwise ON CONFLICT DO NOTHING), so the translation table must
+     * have a UNIQUE(foreignKey, locale) constraint. For single-locale edits write
+     * the translation row directly (e.g. updateBy on the translation repository).
+     *
+     * @param list<string> $locales
+     * @param array<string, scalar|null> $values
+     * @return int Rows actually inserted (locales that already existed are skipped)
+     */
+    public function seedTranslations(int|string $id, array $locales, array $values): int
+    {
+        if ($this->translationConfig === null || $locales === []) {
+            return 0;
+        }
+
+        $cols = array_values(array_filter(
+            $this->translationConfig['fields'],
+            static fn(string $field): bool => array_key_exists($field, $values)
+        ));
+        if ($cols === []) {
+            return 0;
+        }
+
+        // Identifiers come from $translationConfig, validated in TranslationService.
+        $columnList = implode(', ', $cols);
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($cols) + 2, '?')) . ')';
+
+        $params = [];
+        foreach ($locales as $locale) {
+            $params[] = $id;
+            $params[] = $locale;
+            foreach ($cols as $c) {
+                $params[] = $values[$c];
+            }
+        }
+
+        $platform = $this->connection->getDatabasePlatform();
+        if ($platform instanceof AbstractMySQLPlatform) {
+            $verb = 'INSERT IGNORE INTO';
+            $onConflict = '';
+        } elseif ($platform instanceof SQLitePlatform) {
+            $verb = 'INSERT OR IGNORE INTO';
+            $onConflict = '';
+        } else {
+            $verb = 'INSERT INTO';
+            $onConflict = ' ON CONFLICT DO NOTHING';
+        }
+
+        $sql = sprintf(
+            '%s %s (%s, locale, %s) VALUES %s%s',
+            $verb,
+            $this->translationConfig['table'],
+            $this->translationConfig['foreignKey'],
+            $columnList,
+            implode(', ', array_fill(0, count($locales), $rowPlaceholder)),
+            $onConflict,
+        );
+
+        return (int) $this->connection->executeStatement($sql, $params);
     }
 
     /**
