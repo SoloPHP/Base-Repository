@@ -84,6 +84,24 @@ class Post
 }
 ```
 
+### Filter-Only Relations
+
+If a relation exists purely for [criteria filtering](/features/criteria#relation-filters) (correlated `EXISTS`), omit the `setter` — no model property or setter method is needed:
+
+```php
+'comments' => new HasMany(
+    repository: 'commentRepository',
+    foreignKey: 'post_id',
+    // no setter: usable in criteria, excluded from eager loading
+),
+```
+
+Requesting such a relation throws an `InvalidArgumentException` from the `with()` call itself, so the misconfiguration surfaces immediately — not at query time.
+
+::: tip Intent
+Omitting the setter is how you declare a relation filter-only. If you meant to eager load it, the `with()` exception is your signal that the setter is missing from the config.
+:::
+
 ---
 
 ## Usage
@@ -136,7 +154,7 @@ use Solo\BaseRepository\Relation\BelongsTo;
 |------|------|-------------|
 | `repository` | `string` | Property name of the related repository |
 | `foreignKey` | `string` | Foreign key column in current table |
-| `setter` | `string` | Setter method name in model |
+| `setter` | `string` | Setter method name in model; optional — omit for [filter-only relations](#filter-only-relations) |
 | `orderBy` | `array` | Optional ordering (rarely used for BelongsTo) |
 
 ### HasOne

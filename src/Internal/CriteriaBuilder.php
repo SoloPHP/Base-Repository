@@ -64,6 +64,12 @@ use Solo\BaseRepository\Relation\RelationKind;
  */
 final class CriteriaBuilder
 {
+    /** Keys recognized as group connectors in criteria arrays. */
+    public const array GROUP_KEYS = ['OR', 'AND'];
+
+    /** Word-form operators (the subset of ALLOWED_OPERATORS that are valid identifiers). */
+    public const array WORD_OPERATORS = ['LIKE', 'IN', 'BETWEEN'];
+
     private const array ALLOWED_OPERATORS = [
         '=', '!=', '<>', '<', '>', '<=', '>=',
         'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'BETWEEN',
@@ -76,14 +82,8 @@ final class CriteriaBuilder
      * actual table name; self-relation EXISTS subqueries are rejected because
      * MySQL forbids the UPDATE/DELETE target table inside a subquery FROM.
      *
-     * $configuredRelations carries the full set of relation names from the
-     * caller's config, including ones that compiled to nothing (invalid type
-     * or missing repo property). Criteria targeting those are silently dropped
-     * — the caller has already opted to tolerate broken config there.
-     *
      * @param array<string|int, mixed>    $criteria
      * @param array<string, RelationMeta> $compiledRelations
-     * @param array<string, true>         $configuredRelations
      */
     public function build(
         QueryBuilder $qb,
@@ -91,7 +91,6 @@ final class CriteriaBuilder
         string $baseAlias,
         string $basePrimaryKey,
         array $compiledRelations,
-        array $configuredRelations = [],
         bool $useAlias = true,
         ?string $currentLocale = null,
     ): ?string {
@@ -103,7 +102,6 @@ final class CriteriaBuilder
             $baseAlias,
             $basePrimaryKey,
             $compiledRelations,
-            $configuredRelations,
             $useAlias,
             $currentLocale,
             new CompileCounter(),
@@ -153,7 +151,7 @@ final class CriteriaBuilder
             }
 
             // Reserved group keys must carry an array value.
-            if ($key === 'OR' || $key === 'AND') {
+            if (in_array($key, self::GROUP_KEYS, true)) {
                 if (!is_array($value)) {
                     throw new \InvalidArgumentException(
                         "'{$key}' group requires an array value; got " . get_debug_type($value)
@@ -177,12 +175,6 @@ final class CriteriaBuilder
                 if ($field !== '' && isset($ctx->compiledRelations[$relation])) {
                     $groupKey = ($isNotExists ? '!' : '') . $relation;
                     $relationGroups[$groupKey][$field] = $value;
-                    continue;
-                }
-
-                // Configured but didn't compile (invalid type / missing repo property):
-                // silently drop, matching the prior contract for tolerant configs.
-                if (isset($ctx->configuredRelations[$relation])) {
                     continue;
                 }
 
@@ -376,7 +368,7 @@ final class CriteriaBuilder
                 $result[$key] = is_array($value) ? $this->rewriteTranslatedRecur($value, $flipped, $tAlias) : $value;
                 continue;
             }
-            if (($key === 'OR' || $key === 'AND') && is_array($value)) {
+            if (in_array($key, self::GROUP_KEYS, true) && is_array($value)) {
                 $result[$key] = $this->rewriteTranslatedRecur($value, $flipped, $tAlias);
                 continue;
             }

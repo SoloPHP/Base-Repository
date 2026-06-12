@@ -72,8 +72,20 @@ final class EagerLoadingService
         ?string $fallbackLocale = null,
     ): void {
         $config = $relationConfig[$relation] ?? null;
+        if ($config === null) {
+            return; // unknown relation names are ignored
+        }
+
         if (!$config instanceof AbstractRelation) {
-            return;
+            throw new \InvalidArgumentException(
+                "Invalid relation config '{$relation}': expected a Relation instance, got " . get_debug_type($config)
+            );
+        }
+
+        if ($config->setter === '') {
+            throw new \InvalidArgumentException(
+                "Relation '{$relation}' is filter-only (no setter configured) and cannot be eager loaded."
+            );
         }
 
         $relatedRepository = $repository->{$config->repository};
@@ -110,24 +122,30 @@ final class EagerLoadingService
         } elseif ($config instanceof BelongsTo) {
             $ids = $this->pluckUnique($items, $config->foreignKey);
             if (!empty($ids)) {
-                $related = $relatedRepository->findBy([$relatedPrimaryKey => $ids]);
+                // List-form wrapper keeps this machine-generated column key out
+                // of reach of the related repository's scopes() expansion.
+                $related = $relatedRepository->findBy([[$relatedPrimaryKey => $ids]]);
                 $this->joinBelongsTo($items, $related, $config->foreignKey, $setter, $relatedPrimaryKey);
             }
         } elseif ($config instanceof HasMany) {
             $ids = $this->pluckIds($items, $parentPrimaryKey);
-            $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
+            $related = $relatedRepository->findBy([[$config->foreignKey => $ids]], $orderBy);
             $this->joinHasMany($items, $related, $config->foreignKey, $setter, $parentPrimaryKey);
         } elseif ($config instanceof HasOne) {
             $ids = $this->pluckIds($items, $parentPrimaryKey);
-            $related = $relatedRepository->findBy([$config->foreignKey => $ids], $orderBy);
+            $related = $relatedRepository->findBy([[$config->foreignKey => $ids]], $orderBy);
             $this->joinHasOne($items, $related, $config->foreignKey, $setter, $parentPrimaryKey);
         }
 
-        // The related repo's locale is one-shot and is cleared only when its findBy
-        // runs (via withLocaleScope). If a branch above skipped findBy (empty ids or
-        // empty pivot), clear it here so it can't leak into the repo's next query.
+        // The related repo's locale and nested eager-load list are one-shot and
+        // are cleared only when its findBy runs. If a branch above skipped
+        // findBy (empty ids or empty pivot), clear them here so they can't
+        // leak into the repo's next query.
         if ($locale !== null && method_exists($relatedRepository, 'withoutLocale')) {
             $relatedRepository->withoutLocale();
+        }
+        if (!empty($nested) && method_exists($relatedRepository, 'with')) {
+            $relatedRepository->with([]);
         }
     }
 
@@ -172,7 +190,9 @@ final class EagerLoadingService
         }
         $relatedIds = array_values(array_unique($relatedIds));
 
-        $relatedItems = $relatedRepository->findBy([$relatedPrimaryKey => $relatedIds], $sort);
+        // List-form wrapper keeps this machine-generated column key out of
+        // reach of the related repository's scopes() expansion.
+        $relatedItems = $relatedRepository->findBy([[$relatedPrimaryKey => $relatedIds]], $sort);
 
         $reverseMap = [];
         foreach ($pivotMap as $parentId => $relIds) {

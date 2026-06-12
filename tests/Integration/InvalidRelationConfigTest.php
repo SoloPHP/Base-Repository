@@ -28,44 +28,50 @@ class InvalidRelationConfigTest extends TestCase
         ');
     }
 
-    public function testInvalidRelationConfigWithNonDtoValue(): void
+    public function testNonRelationConfigValueThrowsOnQuery(): void
     {
         $repository = new InvalidConfigRepository1($this->connection);
-        $item = $repository->create(['name' => 'Test']);
 
-        // Should not throw, just skip invalid config (non-DTO value)
-        $items = $repository->findBy(['name' => 'Test']);
-        $this->assertCount(1, $items);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Invalid relation config 'invalid': expected a Relation instance, got array");
+
+        $repository->findBy(['name' => 'Test']);
     }
 
-    public function testInvalidRelationConfigWithMissingProperty(): void
+    public function testMissingRepositoryPropertyThrowsOnQuery(): void
     {
         $repository = new InvalidConfigRepository2($this->connection);
-        $item = $repository->create(['name' => 'Test']);
 
-        // Should not throw, just skip invalid config (missing repository property)
-        $items = $repository->findBy(['name' => 'Test']);
-        $this->assertCount(1, $items);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage(
+            "Relation 'invalid' points to missing repository property '\$nonExistentRepository'"
+        );
+
+        $repository->findBy(['name' => 'Test']);
     }
 
-    public function testRelationCriteriaWithInvalidConfig(): void
+    public function testNonRelationConfigValueThrowsOnEagerLoad(): void
     {
         $repository = new InvalidConfigRepository1($this->connection);
-        $repository->create(['name' => 'Test']);
+        $this->connection->executeStatement("INSERT INTO items (name) VALUES ('Test')");
 
-        // Using dot notation - invalid config should be skipped
-        // But the relation criteria is just ignored, so it returns all items
-        $items = $repository->findBy(['invalid.field' => 'value']);
-        $this->assertCount(1, $items);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Invalid relation config 'invalid': expected a Relation instance, got array");
+
+        // findAll() compiles no criteria, so the throw comes from the eager loader.
+        $repository->with(['invalid'])->findAll();
     }
 
-    public function testRelationCriteriaWithMissingRepositoryProperty(): void
+    public function testUnknownRelationNameInWithIsIgnored(): void
     {
-        $repository = new InvalidConfigRepository2($this->connection);
-        $repository->create(['name' => 'Test']);
+        $repository = new InvalidConfigRepository1($this->connection);
+        $this->connection->executeStatement("INSERT INTO items (name) VALUES ('Test')");
 
-        // Using dot notation - invalid config should be skipped
-        $items = $repository->findBy(['invalid.field' => 'value']);
+        // Names absent from relationConfig are tolerated: the eager loader
+        // skips them without touching the (broken) 'invalid' entry, and
+        // criteria-free findAll() never compiles relation metadata.
+        $items = $repository->with(['unknownName'])->findAll();
+
         $this->assertCount(1, $items);
     }
 }
@@ -84,11 +90,11 @@ class InvalidItem
     }
 }
 
-// Repository with invalid relation config (non-DTO value - array instead of RelationType)
+// Repository with invalid relation config (non-Relation value - array instead of RelationType)
 class InvalidConfigRepository1 extends BaseRepository
 {
     protected array $relationConfig = [
-        'invalid' => ['hasMany', 'someRepo', 'item_id', 'setInvalid'], // Old array format - should be ignored
+        'invalid' => ['hasMany', 'someRepo', 'item_id', 'setInvalid'], // Old array format
     ];
 
     public function __construct(\Doctrine\DBAL\Connection $connection)

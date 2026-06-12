@@ -63,8 +63,8 @@ abstract class BaseRepository implements RepositoryInterface
     /** @var array<string, RelationMeta>|null Memoized — invalidated only on relationConfig mutation, which we don't support. */
     private ?array $compiledRelationsCache = null;
 
-    /** @var array<string, true>|null Memoized set of configured relation names, including invalid configs. */
-    private ?array $configuredRelationsCache = null;
+    /** @var array<string, callable(mixed): (array<string|int, mixed>|null)>|null Memoized, validated scopes(). */
+    private ?array $scopesCache = null;
 
     protected ?string $deletedAtColumn = null;
     /** @var array<string, RelationType|mixed> */
@@ -323,9 +323,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function findOneBy(array $criteria, ?array $orderBy = null): ?object
     {
         return $this->withLocaleScope(function () use ($criteria, $orderBy): ?object {
-            if ($this->softDeleteService) {
-                $criteria = $this->softDeleteService->applyCriteria($criteria);
-            }
+            $criteria = $this->prepareCriteria($criteria);
 
             $qb = $this->applyCriteria($this->table(), $criteria);
             if ($orderBy) {
@@ -334,14 +332,19 @@ abstract class BaseRepository implements RepositoryInterface
             $row = $qb->executeQuery()->fetchAssociative();
 
             if (!$row) {
+                // with() is one-shot per query; consume it even when nothing matched.
+                $this->eagerLoadingService?->reset();
                 return null;
             }
 
             $item = $this->mapRowToModel($row);
 
             if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-                $items = $this->eagerLoadingService->loadRelations([$item], [$this, 'loadEagerRelations']);
-                $this->eagerLoadingService->reset();
+                try {
+                    $items = $this->eagerLoadingService->loadRelations([$item], [$this, 'loadEagerRelations']);
+                } finally {
+                    $this->eagerLoadingService->reset();
+                }
                 return $items[0] ?? null;
             }
 
@@ -365,9 +368,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function findBy(array $criteria, ?array $orderBy = null, ?int $perPage = null, ?int $page = null): array
     {
         return $this->withLocaleScope(function () use ($criteria, $orderBy, $perPage, $page): array {
-            if ($this->softDeleteService) {
-                $criteria = $this->softDeleteService->applyCriteria($criteria);
-            }
+            $criteria = $this->prepareCriteria($criteria);
 
             $qb = $this->applyCriteria($this->table(), $criteria);
             if ($orderBy) {
@@ -381,8 +382,11 @@ abstract class BaseRepository implements RepositoryInterface
             $items = array_map(fn(array $r) => $this->mapRowToModel($r), $rows);
 
             if ($this->eagerLoadingService && $this->eagerLoadingService->hasRelations()) {
-                $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
-                $this->eagerLoadingService->reset();
+                try {
+                    $items = $this->eagerLoadingService->loadRelations($items, [$this, 'loadEagerRelations']);
+                } finally {
+                    $this->eagerLoadingService->reset();
+                }
             }
 
             return $items;
@@ -544,6 +548,8 @@ abstract class BaseRepository implements RepositoryInterface
     public function updateBy(array $criteria, array $data): int
     {
         return $this->withLocaleScope(function () use ($criteria, $data): int {
+            $criteria = $this->expandScopesForWrite($criteria);
+
             $qb = $this->queryFactory->updateBuilder();
             $this->bindSetValues($qb, $data, 'update_');
             $qb = $this->applyCriteria($qb, $criteria, false);
@@ -578,9 +584,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function exists(array $criteria): bool
     {
         return $this->withLocaleScope(function () use ($criteria): bool {
-            if ($this->softDeleteService) {
-                $criteria = $this->softDeleteService->applyCriteria($criteria);
-            }
+            $criteria = $this->prepareCriteria($criteria);
 
             $qb = $this->applyCriteria($this->table(), $criteria)
                 ->select('1')
@@ -596,9 +600,7 @@ abstract class BaseRepository implements RepositoryInterface
     public function count(array $criteria): int
     {
         return $this->withLocaleScope(function () use ($criteria): int {
-            if ($this->softDeleteService) {
-                $criteria = $this->softDeleteService->applyCriteria($criteria);
-            }
+            $criteria = $this->prepareCriteria($criteria);
 
             $qb = $this->applyCriteria($this->table(), $criteria)
                 ->select('COUNT(*)');
@@ -636,9 +638,7 @@ abstract class BaseRepository implements RepositoryInterface
     protected function aggregate(string $function, string $column, array $criteria): mixed
     {
         return $this->withLocaleScope(function () use ($function, $column, $criteria): mixed {
-            if ($this->softDeleteService) {
-                $criteria = $this->softDeleteService->applyCriteria($criteria);
-            }
+            $criteria = $this->prepareCriteria($criteria);
 
             Identifier::assertSafe($column);
 
@@ -685,7 +685,223 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
+     * Named criteria scopes — override in child classes.
+     *
+     * Maps a virtual top-level criteria key to a handler that receives the
+     * key's value and returns a criteria fragment (AND-joined with the rest
+     * of the criteria) or null/[] to add no condition. The scope key itself
+     * never reaches the SQL layer, so externally supplied filters (e.g. HTTP
+     * query params) can activate predefined conditions directly:
+     *
+     *   protected function scopes(): array
+     *   {
+     *       return [
+     *           'scope_key' => fn(mixed $value) => $value === null
+     *               ? null                            // no condition added
+     *               : ['column' => ['>=' => $value]], // any criteria fragment,
+     *                                                 // incl. OR groups and rel.field keys
+     *       ];
+     *   }
+     *
+     * Scopes apply to every criteria-accepting method: findBy/findOneBy,
+     * count, exists, aggregates, updateBy, deleteBy and forceDeleteBy.
+     *
+     * Rules — validated once, on first use; violations throw:
+     *  - names must be non-empty strings and plain identifiers (no dots, no '!');
+     *  - names must not collide with reserved criteria keywords (OR, AND,
+     *    LIKE, IN, BETWEEN), the primary key, or the soft-delete column;
+     *  - handlers must accept mixed (this file runs under strict_types, so a
+     *    narrower parameter type throws TypeError on e.g. HTTP string input)
+     *    and return array|null.
+     *
+     * Caveats:
+     *  - scope keys are recognized at the TOP level of the criteria array
+     *    only; nested occurrences (inside OR/AND groups, list-form entries,
+     *    or other scope fragments) compile as plain columns — never name a
+     *    scope after a real column;
+     *  - fragments cannot control soft-delete visibility: the '*' sentinel
+     *    works only as a top-level criteria value supplied by the caller;
+     *  - handlers should be pure; running queries inside a handler is
+     *    unsupported.
+     *
+     * @return array<string, callable(mixed): (array<string|int, mixed>|null)>
+     */
+    protected function scopes(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return array<string, callable(mixed): (array<string|int, mixed>|null)>
+     */
+    private function compiledScopes(): array
+    {
+        return $this->scopesCache ??= $this->validateScopes($this->scopes());
+    }
+
+    /**
+     * Validate the scopes() definition once: names must be plain string
+     * identifiers and must not collide with criteria keywords, the primary
+     * key, or the soft-delete column — the library generates criteria with
+     * those keys itself, and a scope would silently hijack them.
+     *
+     * @param array<int|string, mixed> $scopes
+     * @return array<string, callable(mixed): (array<string|int, mixed>|null)>
+     */
+    private function validateScopes(array $scopes): array
+    {
+        /** @var array<string, callable(mixed): (array<string|int, mixed>|null)> $validated */
+        $validated = [];
+
+        foreach ($scopes as $name => $handler) {
+            if (!is_string($name)) {
+                throw new \InvalidArgumentException(
+                    'Scope names must be non-empty strings; got key of type ' . get_debug_type($name)
+                );
+            }
+
+            Identifier::assertSafe($name);
+
+            $upper = strtoupper($name);
+            if (
+                in_array($upper, CriteriaBuilder::GROUP_KEYS, true)
+                || in_array($upper, CriteriaBuilder::WORD_OPERATORS, true)
+            ) {
+                throw new \InvalidArgumentException(
+                    "Scope name '{$name}' collides with a reserved criteria keyword"
+                );
+            }
+
+            if ($name === $this->primaryKey) {
+                throw new \InvalidArgumentException(
+                    "Scope name '{$name}' collides with the primary key column"
+                );
+            }
+
+            if ($name === $this->deletedAtColumn) {
+                throw new \InvalidArgumentException(
+                    "Scope name '{$name}' collides with the soft-delete column"
+                );
+            }
+
+            if (!is_callable($handler)) {
+                throw new \InvalidArgumentException(
+                    "Scope '{$name}' handler must be callable, got " . get_debug_type($handler)
+                );
+            }
+
+            $validated[$name] = $handler;
+        }
+
+        return $validated;
+    }
+
+    /**
+     * Replace top-level scope keys in $criteria with the fragments their
+     * handlers return. Fragments are appended as list-form entries, which
+     * CriteriaBuilder compiles as AND-joined groups.
+     *
+     * Read/write entry points call this via prepareCriteria() and
+     * expandScopesForWrite(); custom subclass methods that pass external
+     * criteria to applyCriteria() directly should call it themselves.
+     *
+     * @param array<string|int, mixed> $criteria
+     * @return array<string|int, mixed>
+     */
+    protected function expandScopes(array $criteria): array
+    {
+        $scopes = $this->compiledScopes();
+        if ($scopes === [] || $criteria === []) {
+            return $criteria;
+        }
+
+        $fragments = [];
+        $locale = $this->currentLocale;
+        $fallbackLocale = $this->fallbackLocale;
+
+        try {
+            foreach ($criteria as $name => $value) {
+                if (!is_string($name) || !isset($scopes[$name])) {
+                    continue;
+                }
+
+                unset($criteria[$name]);
+
+                /** @var mixed $fragment runtime-checked: handlers may violate the docblock contract */
+                $fragment = ($scopes[$name])($value);
+
+                if ($fragment === null || $fragment === []) {
+                    continue;
+                }
+
+                if (!is_array($fragment)) {
+                    throw new \InvalidArgumentException(
+                        "Scope '{$name}' handler must return array or null, got " . get_debug_type($fragment)
+                    );
+                }
+
+                $fragments[] = $fragment;
+            }
+        } finally {
+            // Handlers are user code; restore the in-flight locale in case a
+            // handler ran a nested query whose locale scope cleared it.
+            $this->currentLocale = $locale;
+            $this->fallbackLocale = $fallbackLocale;
+        }
+
+        // array_merge (not $criteria[] = ...) renumbers integer keys safely
+        // even when caller-supplied list-form entries carry arbitrary int keys.
+        return $fragments === [] ? $criteria : array_merge($criteria, $fragments);
+    }
+
+    /**
+     * Criteria pre-processing shared by the read paths: scope expansion runs
+     * first, so handlers never see (or consume) the soft-delete key injected
+     * afterwards.
+     *
+     * @param array<string|int, mixed> $criteria
+     * @return array<string|int, mixed>
+     */
+    private function prepareCriteria(array $criteria): array
+    {
+        $criteria = $this->expandScopes($criteria);
+
+        if ($this->softDeleteService) {
+            $criteria = $this->softDeleteService->applyCriteria($criteria);
+        }
+
+        return $criteria;
+    }
+
+    /**
+     * Scope expansion for write paths. Refuses criteria that expansion
+     * collapsed to nothing: the caller asked for a filtered write, and
+     * issuing it without a WHERE clause would touch every row. An explicitly
+     * empty array remains a deliberate full-table write.
+     *
+     * @param array<string|int, mixed> $criteria
+     * @return array<string|int, mixed>
+     */
+    private function expandScopesForWrite(array $criteria): array
+    {
+        $expanded = $this->expandScopes($criteria);
+
+        if ($expanded === [] && $criteria !== []) {
+            throw new \InvalidArgumentException(
+                'Scope expansion removed every criteria condition; refusing an unbounded write. '
+                . 'Pass [] explicitly to affect all rows.'
+            );
+        }
+
+        return $expanded;
+    }
+
+    /**
      * Compile $criteria into a WHERE expression and bind its parameters on $qb.
+     *
+     * Criteria must be pre-processed by the caller: prepareCriteria() on read
+     * paths, expandScopesForWrite() on write paths — scope expansion and
+     * soft-delete defaults are NOT applied here.
      *
      * @param array<string|int, mixed> $criteria
      */
@@ -701,7 +917,6 @@ abstract class BaseRepository implements RepositoryInterface
             $useAlias ? $this->getTableAlias() : $this->table,
             $this->primaryKey,
             $this->compileRelationMetadata(),
-            $this->configuredRelationNames(),
             $useAlias,
             $this->currentLocale,
         );
@@ -725,12 +940,18 @@ abstract class BaseRepository implements RepositoryInterface
         $result = [];
         foreach ($this->relationConfig as $relation => $config) {
             if (!$config instanceof AbstractRelation) {
-                continue;
+                throw new \InvalidArgumentException(
+                    "Invalid relation config '{$relation}': expected a Relation instance, got "
+                    . get_debug_type($config)
+                );
             }
 
             $repositoryProperty = $config->repository;
             if (!property_exists($this, $repositoryProperty)) {
-                continue;
+                throw new \InvalidArgumentException(
+                    "Relation '{$relation}' points to missing repository property "
+                    . "'\${$repositoryProperty}' on " . static::class
+                );
             }
 
             $relatedRepo = $this->{$repositoryProperty};
@@ -767,14 +988,6 @@ abstract class BaseRepository implements RepositoryInterface
         }
 
         return $this->compiledRelationsCache = $result;
-    }
-
-    /**
-     * @return array<string, true>
-     */
-    private function configuredRelationNames(): array
-    {
-        return $this->configuredRelationsCache ??= array_fill_keys(array_keys($this->relationConfig), true);
     }
 
     /**
@@ -912,6 +1125,8 @@ abstract class BaseRepository implements RepositoryInterface
     public function forceDeleteBy(array $criteria): int
     {
         return $this->withLocaleScope(function () use ($criteria): int {
+            $criteria = $this->expandScopesForWrite($criteria);
+
             $qb = $this->queryFactory->deleteBuilder();
             $qb = $this->applyCriteria($qb, $criteria, false);
             return (int) $qb->executeStatement();
@@ -930,14 +1145,40 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * Specify relations to eager load
+     * Specify relations to eager load.
+     *
+     * Throws immediately for filter-only relations (configured without a
+     * setter); unknown names keep the tolerant-config contract and are
+     * silently ignored at load time.
      */
     public function with(array $relations): static
     {
         if (!empty($this->relationConfig)) {
+            $this->assertEagerLoadable($relations);
             $this->getEagerLoadingService()->setRelations($relations);
         }
         return $this;
+    }
+
+    /**
+     * @param array<int, mixed> $relations
+     */
+    private function assertEagerLoadable(array $relations): void
+    {
+        foreach ($relations as $path) {
+            if (!is_string($path) || $path === '') {
+                continue;
+            }
+
+            $top = explode('.', $path, 2)[0];
+            $config = $this->relationConfig[$top] ?? null;
+
+            if ($config instanceof AbstractRelation && $config->setter === '') {
+                throw new \InvalidArgumentException(
+                    "Relation '{$top}' is filter-only (no setter configured) and cannot be eager loaded."
+                );
+            }
+        }
     }
 
     /**

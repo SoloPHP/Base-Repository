@@ -171,7 +171,11 @@ final class OrderRepository extends BaseRepository
 
 ## Scoped Queries
 
-Create reusable query scopes:
+Create reusable query logic as repository methods:
+
+::: info Methods vs. named scopes
+This section covers query helpers exposed as **methods** (`$repo->active()`). For virtual **criteria keys** expanded inside `findBy()`/`count()`/etc. — e.g. mapping HTTP filter params — see the [Scopes](/features/scopes) feature; the two are independent mechanisms.
+:::
 
 ```php
 final class ProductRepository extends BaseRepository

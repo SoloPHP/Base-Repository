@@ -32,12 +32,11 @@ class CriteriaBuilderTest extends TestCase
     private function build(
         array $criteria,
         array $compiled = [],
-        array $configured = [],
         bool $useAlias = true,
         ?string $locale = null,
     ): array {
         $qb = $this->newQueryBuilder();
-        $expr = $this->builder->build($qb, $criteria, 't', 'id', $compiled, $configured, $useAlias, $locale);
+        $expr = $this->builder->build($qb, $criteria, 't', 'id', $compiled, $useAlias, $locale);
         return [$expr, $qb->getParameters()];
     }
 
@@ -390,18 +389,6 @@ class CriteriaBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/Self-referential EXISTS/');
         $this->build(['children.name' => 'x'], $compiled, useAlias: false);
-    }
-
-    public function testConfiguredButUncompiledRelationIsSilentlyDropped(): void
-    {
-        // Relation 'broken' is in $configured but NOT in $compiled — drop the criterion silently.
-        [$expr, $params] = $this->build(
-            ['broken.field' => 'value'],
-            compiled: [],
-            configured: ['broken' => true],
-        );
-        $this->assertNull($expr);
-        $this->assertSame([], $params);
     }
 
     public function testUnknownRelationWithBangThrows(): void

@@ -26,6 +26,9 @@ features:
   - icon: 🔍
     title: Rich Criteria Syntax
     details: Operators, IN lists, BETWEEN, OR/AND groups, NULL checks, and correlated EXISTS subqueries via relation dot-notation.
+  - icon: 🎯
+    title: Scopes
+    details: Virtual criteria keys expanded into reusable criteria fragments — map allow-listed HTTP filter keys to predefined conditions.
   - icon: 📊
     title: Aggregations
     details: Built-in count(), sum(), avg(), min(), max() with full criteria support.

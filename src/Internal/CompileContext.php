@@ -21,14 +21,12 @@ final readonly class CompileContext
 {
     /**
      * @param array<string, RelationMeta> $compiledRelations
-     * @param array<string, true>         $configuredRelations
      */
     public function __construct(
         public QueryBuilder $qb,
         public string $baseAlias,
         public string $basePrimaryKey,
         public array $compiledRelations,
-        public array $configuredRelations,
         public bool $useAlias,
         public ?string $currentLocale,
         public CompileCounter $counter,
@@ -46,7 +44,6 @@ final readonly class CompileContext
             $this->qb,
             $alias,
             $primaryKey,
-            [],
             [],
             true,
             null,
