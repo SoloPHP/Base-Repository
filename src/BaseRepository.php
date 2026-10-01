@@ -394,13 +394,36 @@ abstract class BaseRepository implements RepositoryInterface
     }
 
     /**
+     * Called after each successful SQL write to this repository's own table,
+     * even when no rows were affected. insertMany() calls this once per statement
+     * (chunk/column group), including writes before a later statement fails.
+     * delete(), deleteBy() and restore() use the hook through their delegates.
+     *
+     * Runs immediately, before follow-up reads and without waiting for commit.
+     * Does not run for failed statements, pivot/translation writes, or raw SQL
+     * through queryBuilder()/getConnection(). Only this instance is notified.
+     *
+     * Override to invalidate local memoized values. Keep implementations
+     * idempotent and non-throwing: the SQL write has already succeeded.
+     * No arguments are needed for invalidating all memoized values of the table.
+     * Rollback does not call this hook; memoization during transactions needs
+     * separate handling if values could be repopulated before a rollback.
+     */
+    protected function afterWrite(): void
+    {
+    }
+
+    /**
      * @param array<string, mixed> $data
      */
     public function insert(array $data): int
     {
         $qb = $this->queryFactory->insertBuilder();
         $this->bindInsertValues($qb, $data);
-        return $qb->executeStatement();
+        $affected = $qb->executeStatement();
+        $this->afterWrite();
+
+        return $affected;
     }
 
     /**
@@ -454,6 +477,7 @@ abstract class BaseRepository implements RepositoryInterface
         $qb = $this->queryFactory->insertBuilder();
         $this->bindInsertValues($qb, $data);
         $qb->executeStatement();
+        $this->afterWrite();
 
         $id = $pkProvided ? $data[$this->primaryKey] : $this->connection->lastInsertId();
 
@@ -518,7 +542,10 @@ abstract class BaseRepository implements RepositoryInterface
             }
         }
 
-        return (int) $this->connection->executeStatement($sql, $params);
+        $affected = (int) $this->connection->executeStatement($sql, $params);
+        $this->afterWrite();
+
+        return $affected;
     }
 
     /**
@@ -531,6 +558,7 @@ abstract class BaseRepository implements RepositoryInterface
         $qb = $this->queryFactory->updateByIdBuilder($this->primaryKey, $id);
         $this->bindSetValues($qb, $data, 'update_');
         $qb->executeStatement();
+        $this->afterWrite();
 
         $model = $this->find($id);
 
@@ -553,7 +581,10 @@ abstract class BaseRepository implements RepositoryInterface
             $qb = $this->queryFactory->updateBuilder();
             $this->bindSetValues($qb, $data, 'update_');
             $qb = $this->applyCriteria($qb, $criteria, false);
-            return (int) $qb->executeStatement();
+            $affected = (int) $qb->executeStatement();
+            $this->afterWrite();
+
+            return $affected;
         });
     }
 
@@ -1115,8 +1146,11 @@ abstract class BaseRepository implements RepositoryInterface
     {
         Identifier::assertSafe($this->primaryKey);
 
-        return (int) $this->queryFactory->deleteByIdBuilder($this->primaryKey, $id)
+        $affected = (int) $this->queryFactory->deleteByIdBuilder($this->primaryKey, $id)
             ->executeStatement();
+        $this->afterWrite();
+
+        return $affected;
     }
 
     /**
@@ -1129,7 +1163,10 @@ abstract class BaseRepository implements RepositoryInterface
 
             $qb = $this->queryFactory->deleteBuilder();
             $qb = $this->applyCriteria($qb, $criteria, false);
-            return (int) $qb->executeStatement();
+            $affected = (int) $qb->executeStatement();
+            $this->afterWrite();
+
+            return $affected;
         });
     }
 

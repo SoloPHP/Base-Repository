@@ -34,6 +34,58 @@ These methods are available for use in your repository subclasses:
 | `mapRowToModel(array $row)` | Converts database row to model |
 | `applyCriteria(QueryBuilder $qb, array $criteria, bool $useAlias = true)` | Compiles criteria → WHERE expression and binds parameters on `$qb`. Pass `useAlias: false` for UPDATE/DELETE builders |
 | `applyOrderBy(QueryBuilder $qb, array $orderBy)` | Applies sorting (qualifies bare columns with the table alias) |
+| `afterWrite(): void` | Override to invalidate local memoized values after each successful SQL write to this repository's table |
+
+---
+
+## Invalidating Memoized Values After Writes
+
+Override `afterWrite()` when your repository memoizes values derived from its own table. This avoids overriding every write method just to clear the same cache:
+
+Available since **v3.1.0**. If a subclass already declares `afterWrite()`, ensure it is compatible with `protected function afterWrite(): void` and its new lifecycle behavior, or rename the existing method.
+
+```php
+/** @extends BaseRepository<Organization> */
+final class OrganizationRepository extends BaseRepository
+{
+    /** @var array<int, string> */
+    private array $timezones = [];
+
+    public function __construct(Connection $connection)
+    {
+        parent::__construct($connection, Organization::class, 'organizations');
+    }
+
+    public function timezone(int $id): string
+    {
+        // Read directly during transactions, without using or filling the memo.
+        if ($this->inTransaction()) {
+            return $this->readTimezone($id);
+        }
+
+        return $this->timezones[$id] ??= $this->readTimezone($id);
+    }
+
+    private function readTimezone(int $id): string
+    {
+        return $this->find($id)?->timezone
+            ?? throw new \RuntimeException('Organization not found');
+    }
+
+    protected function afterWrite(): void
+    {
+        $this->timezones = [];
+    }
+}
+```
+
+The hook runs after successful statements from `insert()`, `create()`, `insertMany()`, `update()`, `updateBy()`, `forceDelete()` and `forceDeleteBy()`. `delete()`, `deleteBy()` and soft-delete `restore()` reach it through those methods, without an extra call. It runs even when a statement affects zero rows, but not when the statement throws. Calls that execute no statement, such as `insertMany([])` or `restore()` without soft deletes, do not trigger it.
+
+`insertMany()` calls the hook once per SQL statement, including each chunk and column group. If a later statement fails, earlier successful writes have already invalidated the memo. Keep the hook idempotent and non-throwing: the write has already succeeded. In `create()` and `update()`, it runs before the follow-up read, even if that read subsequently fails.
+
+The hook runs immediately inside transactions, without waiting for commit. In the example, writes clear the old memo and transactional reads never refill it. After either commit or rollback, the next read outside the transaction memoizes the current database value. This also works for rollback caused by an exception in `withTransaction()`. The hook itself is not a commit or rollback notification; a subclass that fills its memo during transactions must handle rollback separately.
+
+Only writes through this repository instance are covered. `attach()`, `detach()`, `sync()` and `seedTranslations()` write other tables and do not trigger the hook. Raw SQL through `queryBuilder()` or `getConnection()`, writes through another repository instance, and external database changes also bypass it. After a custom SQL write in your subclass, call `$this->afterWrite()` yourself if it changes this table.
 
 ---
 

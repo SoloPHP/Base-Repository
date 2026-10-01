@@ -16,6 +16,7 @@ Lightweight PHP repository pattern with built-in soft delete, eager loading, and
 - Translation via `withLocale()` with optional fallback locale — auto LEFT JOIN, propagates into relations; `seedTranslations()` fills all locales on create (cross-platform)
 - Transaction helpers with row locking (`SELECT ... FOR UPDATE`) and cross-process advisory locks (`withLock()`) for idempotency
 - Custom IDs (UUID, ULID, prefixed) via `$autoIncrement = false`
+- Protected `afterWrite()` hook for invalidating repository-local memoized values after successful writes
 
 ## Installation
 ```bash
@@ -56,6 +57,7 @@ $repo->restore($id);     // Restore
 - [Soft Delete](https://solophp.github.io/Base-Repository/features/soft-delete)
 - [Eager Loading](https://solophp.github.io/Base-Repository/features/eager-loading)
 - [Translations](https://solophp.github.io/Base-Repository/features/translations)
+- [Extending Repositories & Write Hooks](https://solophp.github.io/Base-Repository/advanced/extending#invalidating-memoized-values-after-writes)
 - [API Reference](https://solophp.github.io/Base-Repository/methods/retrieval)
 
 ## License
