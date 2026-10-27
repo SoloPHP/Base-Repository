@@ -1,5 +1,9 @@
 # Installation
 
+::: danger Deprecated
+Solo Base Repository is no longer maintained and will receive no new features or fixes. Use [Solo Repository](https://solophp.github.io/Repository/) instead (`composer require solophp/repository`). It is a new package with its own API, not a drop-in replacement.
+:::
+
 ## Requirements
 
 - PHP 8.3 or higher

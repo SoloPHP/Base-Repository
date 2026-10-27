@@ -1,5 +1,7 @@
 # Solo Base Repository
 
+> **Deprecated.** This package is no longer maintained and will receive no new features or fixes. Use [Solo Repository](https://github.com/SoloPHP/Repository) instead: `composer require solophp/repository`, [documentation](https://solophp.github.io/Repository/). It is a new package with its own API, not a drop-in replacement. Existing releases remain installable.
+
 Lightweight PHP repository pattern with built-in soft delete, eager loading, and rich criteria syntax.
 
 [![Latest Version](https://img.shields.io/packagist/v/solophp/base-repository.svg)](https://packagist.org/packages/solophp/base-repository)
