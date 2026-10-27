@@ -43,6 +43,10 @@ features:
     details: Auto-detect custom IDs (UUIDs, prefixed IDs). Just pass your ID in create() — no configuration needed.
 ---
 
+::: danger Deprecated
+Solo Base Repository is no longer maintained and will receive no new features or fixes. Use [Solo Repository](https://solophp.github.io/Repository/) instead (`composer require solophp/repository`). It is a new package with its own API, not a drop-in replacement.
+:::
+
 <style>
 :root {
   --vp-home-hero-name-color: transparent;

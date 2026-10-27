@@ -4,6 +4,7 @@
   "description": "Base repository pattern implementation for PHP applications",
   "keywords": ["repository", "pattern", "crud", "php", "psr", "php8", "strict-types"],
   "license": "MIT",
+  "abandoned": "solophp/repository",
   "authors": [
     {
       "name": "Vitaliy Olos",
